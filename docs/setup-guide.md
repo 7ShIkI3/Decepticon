@@ -357,26 +357,24 @@ decepticon
 
 **How it works:**
 
-- The unified `auth/` provider dispatcher routes ChatGPT-subscription model
-  names (`auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5-nano`) through
-  `chatgpt_handler.py`, while `auth/claude-*` continues to flow through
-  `claude_code_handler.py`. This avoids the native LiteLLM `chatgpt`
-  provider whose Codex device-code OAuth would otherwise fire at proxy
-  startup.
-- The handler exchanges the session token for an access token via `chatgpt.com/api/auth/session`
-- Requests hit `api.openai.com/v1/chat/completions` with the subscription Bearer token
-- Access tokens are cached and refreshed automatically
+- Decepticon exposes ChatGPT subscription models as `auth/gpt-5.5`,
+  `auth/gpt-5.4`, and `auth/gpt-5-nano`.
+- LiteLLM dynamic config maps those aliases to LiteLLM's native
+  `chatgpt/gpt-*` provider routes only when `DECEPTICON_AUTH_CHATGPT=true`.
+- `docker-compose.yml` mounts the host token directory into the LiteLLM
+  container at `/root/.config/litellm/chatgpt`.
+- Access tokens are handled by LiteLLM's native ChatGPT provider.
 
 **Alternative token sources (in priority order):**
 
 1. `CHATGPT_ACCESS_TOKEN` env var — pre-extracted Bearer token
 2. `CHATGPT_SESSION_TOKEN` env var — browser session cookie
-3. `~/.config/chatgpt/tokens.json` — persisted token file
+3. `~/.config/litellm/chatgpt/tokens.json` — persisted token file mounted into LiteLLM
 
 **Custom token path:**
 
 ```bash
-CHATGPT_TOKENS_PATH=/custom/path/tokens.json
+LITELLM_CHATGPT_TOKEN_DIR=/custom/host/token/dir
 ```
 
 ---

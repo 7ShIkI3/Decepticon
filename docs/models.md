@@ -292,12 +292,12 @@ startup so you can confirm what got picked up.
 
 ## Subscription OAuth Providers
 
-Use monthly subscriptions instead of per-token API billing. Each subscription has a custom LiteLLM handler that authenticates via OAuth/session tokens.
+Use monthly subscriptions instead of per-token API billing. ChatGPT uses LiteLLM's native ChatGPT provider; the others use custom LiteLLM handlers that authenticate via OAuth/session tokens.
 
 | Subscription | AuthMethod | Models | Handler |
 |---|---|---|---|
 | Claude Max/Pro/Team | `anthropic_oauth` | auth/claude-opus, sonnet, haiku | `claude_code_handler.py` |
-| ChatGPT Pro/Plus/Team | `openai_oauth` | auth/gpt-5.5, gpt-5.4, gpt-5-nano | `chatgpt_handler.py` (via `auth_handler.py` dispatcher) |
+| ChatGPT Pro/Plus/Team | `openai_oauth` | auth/gpt-5.5, gpt-5.4, gpt-5-nano | LiteLLM native `chatgpt` provider |
 | Gemini Advanced | `google_oauth` | gemini-sub/gemini-2.5-pro, flash | `gemini_handler.py` |
 | Copilot Pro | `copilot_oauth` | copilot/gpt-4o, o1, o3-mini | `copilot_handler.py` |
 | SuperGrok | `grok_oauth` | grok-sub/grok-3, grok-3-mini | `grok_handler.py` |

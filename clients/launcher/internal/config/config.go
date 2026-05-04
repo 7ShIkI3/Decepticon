@@ -235,9 +235,9 @@ func ValidateAPIKeys(env map[string]string) error {
 // OAuth subscription handler so we don't repeat the validation logic.
 // Resolution order matches each handler in config/*_handler.py exactly:
 //
-//	1. <PROVIDER>_ACCESS_TOKEN   — pre-extracted Bearer
-//	2. <PROVIDER>_SESSION_TOKEN  — browser session cookie value
-//	3. ~/.config/<dir>/tokens.json on disk
+//  1. <PROVIDER>_ACCESS_TOKEN   — pre-extracted Bearer
+//  2. <PROVIDER>_SESSION_TOKEN  — browser session cookie value
+//  3. configured tokens.json on disk
 //
 // Two providers diverge slightly:
 //   - Gemini Advanced ships a multi-cookie value (GEMINI_SESSION_COOKIES)
@@ -248,6 +248,8 @@ type subscriptionMethod struct {
 	Toggle    string   // DECEPTICON_AUTH_<X> boolean enabling this path
 	TokenEnvs []string // env vars that satisfy the path on their own
 	ConfigDir string   // ~/.config/<dir>/tokens.json fallback
+	DirEnv    string   // optional host-side token directory env var
+	LegacyDir string   // optional legacy ~/.config/<dir>/tokens.json fallback
 	Label     string   // human name for error messages
 }
 
@@ -255,7 +257,9 @@ var oauthSubscriptions = map[string]subscriptionMethod{
 	"chatgpt": {
 		Toggle:    "DECEPTICON_AUTH_CHATGPT",
 		TokenEnvs: []string{"CHATGPT_ACCESS_TOKEN", "CHATGPT_SESSION_TOKEN"},
-		ConfigDir: "chatgpt",
+		ConfigDir: "litellm/chatgpt",
+		DirEnv:    "LITELLM_CHATGPT_TOKEN_DIR",
+		LegacyDir: "chatgpt",
 		Label:     "ChatGPT",
 	},
 	"gemini": {
@@ -291,7 +295,7 @@ var oauthSubscriptions = map[string]subscriptionMethod{
 //     ~/.claude/.credentials.json. LiteLLM mounts that file read-only.
 //   - DECEPTICON_AUTH_<X>=true (CHATGPT, GEMINI, COPILOT, GROK,
 //     PERPLEXITY) is satisfied by a token env var or a tokens.json
-//     file under ~/.config/<x>/. See subscriptionMethod above.
+//     file at its mounted token directory. See subscriptionMethod above.
 //
 // Local LLM path: ollama_local in DECEPTICON_AUTH_PRIORITY (or any
 // OLLAMA_API_BASE configured) is treated as a valid credential. Ollama
@@ -360,8 +364,8 @@ func hasOllamaSelected(env map[string]string) bool {
 }
 
 // validateOllamaCredentials accepts the Ollama path when the user has
-// either listed ``ollama_local`` in DECEPTICON_AUTH_PRIORITY or set
-// ``OLLAMA_API_BASE`` directly. Ollama itself has no API key — the
+// either listed ollama_local in DECEPTICON_AUTH_PRIORITY or set
+// OLLAMA_API_BASE directly. Ollama itself has no API key — the
 // only required signal is the base URL pointing at a running instance.
 //
 // We don't probe the URL here; the launcher runs on the host while the
@@ -433,7 +437,7 @@ func validateClaudeCredentials() error {
 //
 //  1. <PROVIDER>_ACCESS_TOKEN env (pre-extracted Bearer)
 //  2. <PROVIDER>_SESSION_TOKEN / _SESSION_COOKIES / _REFRESH_TOKEN env
-//  3. ~/.config/<dir>/tokens.json on disk
+//  3. configured tokens.json on disk
 //
 // We don't validate token shape — providers ship them in many formats and shapes
 // drift across versions. We only catch the "toggled on in onboard but never
@@ -448,9 +452,11 @@ func validateSubscriptionCredentials(env map[string]string, sub subscriptionMeth
 	if err != nil {
 		return fmt.Errorf("locate home directory: %w", err)
 	}
-	path := filepath.Join(home, ".config", sub.ConfigDir, "tokens.json")
-	if _, err := os.Stat(path); err == nil {
-		return nil
+	paths := subscriptionTokenPaths(env, home, sub)
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
 	}
 	hints := strings.Join(sub.TokenEnvs, " or ")
 	return fmt.Errorf(
@@ -459,8 +465,38 @@ func validateSubscriptionCredentials(env map[string]string, sub subscriptionMeth
 			"  - %s env var\n"+
 			"  - %s on disk\n"+
 			"Run 'decepticon onboard --reset' to (re)configure interactively.",
-		sub.Label, hints, path,
+		sub.Label, hints, strings.Join(paths, " or "),
 	)
+}
+
+func subscriptionTokenPaths(env map[string]string, home string, sub subscriptionMethod) []string {
+	var paths []string
+	if sub.DirEnv != "" {
+		if dir := strings.TrimSpace(Get(env, sub.DirEnv, os.Getenv(sub.DirEnv))); dir != "" {
+			paths = append(paths, filepath.Join(dir, "tokens.json"))
+		}
+	}
+	paths = append(paths, filepath.Join(home, ".config", sub.ConfigDir, "tokens.json"))
+	if sub.LegacyDir != "" {
+		paths = append(paths, filepath.Join(home, ".config", sub.LegacyDir, "tokens.json"))
+	}
+	return dedupeStrings(paths)
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 // extractClaudeAccessToken walks the credentials JSON in the same resolution order as

@@ -205,7 +205,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		// tokens automatically, so we ask the user to paste the
 		// `__Secure-next-auth.session-token` cookie from a signed-in
 		// chatgpt.com browser session. Optional — users who set
-		// CHATGPT_ACCESS_TOKEN externally or place ~/.config/chatgpt/tokens.json
+		// CHATGPT_ACCESS_TOKEN externally or place ~/.config/litellm/chatgpt/tokens.json
 		// can leave this blank and skip with Enter.
 		huh.NewGroup(
 			huh.NewNote().
