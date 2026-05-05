@@ -70,6 +70,13 @@ class TestMethodModels:
         assert m[Tier.MID] == "openai/gpt-5.4"
         assert m[Tier.LOW] == "openai/gpt-5-nano"
 
+    def test_chatgpt_oauth_uses_only_supported_subscription_models(self):
+        m = METHOD_MODELS[AuthMethod.OPENAI_OAUTH]
+        assert m[Tier.HIGH] == "auth/gpt-5.5"
+        assert m[Tier.MID] == "auth/gpt-5.4"
+        assert m[Tier.LOW] == "auth/gpt-5.4"
+        assert "auth/gpt-5-nano" not in m.values()
+
     def test_google_full_tier_coverage(self):
         m = METHOD_MODELS[AuthMethod.GOOGLE_API]
         assert m[Tier.HIGH] == "gemini/gemini-2.5-pro"
@@ -186,6 +193,11 @@ class TestResolveChain:
         creds = Credentials(methods=[AuthMethod.MINIMAX_API])
         chain = resolve_chain(Tier.LOW, creds)
         assert chain == []
+
+    def test_chatgpt_oauth_low_falls_back_to_gpt_5_4(self):
+        creds = Credentials(methods=[AuthMethod.OPENAI_OAUTH])
+        chain = resolve_chain(Tier.LOW, creds)
+        assert chain == ["auth/gpt-5.4"]
 
     def test_empty_credentials_returns_empty(self):
         assert resolve_chain(Tier.HIGH, Credentials()) == []

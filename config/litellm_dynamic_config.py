@@ -251,7 +251,6 @@ _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
     "DECEPTICON_AUTH_CHATGPT": [
         {"model_name": "auth/gpt-5.5", "litellm_params": {"model": "chatgpt/gpt-5.5"}},
         {"model_name": "auth/gpt-5.4", "litellm_params": {"model": "chatgpt/gpt-5.4"}},
-        {"model_name": "auth/gpt-5-nano", "litellm_params": {"model": "chatgpt/gpt-5-nano"}},
     ],
     "DECEPTICON_AUTH_GEMINI": [
         {

@@ -137,3 +137,20 @@ def test_merge_dynamic_models_keeps_existing_entries_and_appends_missing() -> No
         "openai/gpt-4.1",
         "mistral/mistral-large-latest",
     ]
+
+
+def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() -> None:
+    merged = merge_dynamic_models(
+        {"model_list": [], "litellm_settings": {"fallbacks": []}},
+        {"DECEPTICON_AUTH_CHATGPT": "true"},
+    )
+
+    routes = {
+        entry["model_name"]: entry["litellm_params"]["model"] for entry in merged["model_list"]
+    }
+    assert routes == {
+        "auth/gpt-5.5": "chatgpt/gpt-5.5",
+        "auth/gpt-5.4": "chatgpt/gpt-5.4",
+    }
+    assert "auth/gpt-5-nano" not in routes
+    assert merged["litellm_settings"]["fallbacks"] == [{"auth/gpt-5.5": ["auth/gpt-5.4"]}]

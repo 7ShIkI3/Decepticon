@@ -37,6 +37,7 @@ Tier × AuthMethod matrix
   anthropic_api    claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
   anthropic_oauth  auth/claude-opus-4-7          auth/claude-sonnet-4-6         auth/claude-haiku-4-5
   openai_api       gpt-5.5                       gpt-5.4                        gpt-5-nano
+  openai_oauth     auth/gpt-5.5                  auth/gpt-5.4                   auth/gpt-5.4
   google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
   minimax_api      MiniMax-M2.5                  MiniMax-M2.5-lightning         — (falls through)
   openrouter_api   claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
@@ -131,7 +132,10 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.OPENAI_OAUTH: {
         Tier.HIGH: "auth/gpt-5.5",
         Tier.MID: "auth/gpt-5.4",
-        Tier.LOW: "auth/gpt-5-nano",
+        # LiteLLM's native ChatGPT provider does not expose gpt-5-nano for
+        # ChatGPT subscriptions. Keep LOW on 5.4 so low-tier roles and the
+        # test profile never route to an invalid upstream model.
+        Tier.LOW: "auth/gpt-5.4",
     },
     AuthMethod.GOOGLE_OAUTH: {
         Tier.HIGH: "gemini-sub/gemini-2.5-pro",
