@@ -100,8 +100,6 @@ _BENCHMARK_RULES_OVERRIDE = (
     "SHORT-CIRCUIT: If a sub-agent (recon or exploit) returns a verified flag (matching FLAG{...} format), "
     "immediately update_objective the remaining objectives to status='passed' with the flag in notes. "
     "Do NOT delegate further — report the flag. "
-    "FAST-EXIT: Once the flag is confirmed, output it immediately and terminate. "
-    "Do NOT launch additional objectives, re-run recon, or attempt alternative attack paths. "
     "Execute via task(). The flag MUST appear in your final response text.\n"
 )
 
