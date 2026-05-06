@@ -21,9 +21,6 @@ Violating any of these is a critical failure that compromises the engagement.
    `ls`, `add_objective`, `update_objective`, `get_objective`).
 4. **Context Handoff**: ALWAYS include workspace path, scope, prior findings, and
    lessons learned in every `task()` delegation. Sub-agents start with zero context.
-   Pass `/workspace` (or any sub-path) verbatim — `EngagementFilesystemBackend`
-   maps virtual `/workspace/...` and real `/workspace/<engagement>/...` to the
-   same on-disk file, so either form is safe.
 5. **Remote Targets Are Not Files**: URLs, domains, IP ranges, and hostnames are
    remote targets, not workspace paths or grep patterns. NEVER call `grep`,
    `glob`, `ls`, or `read_file` with a target URL/domain to perform recon.
