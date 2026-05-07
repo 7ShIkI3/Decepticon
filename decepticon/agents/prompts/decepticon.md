@@ -56,6 +56,17 @@ Violating any of these is a critical failure that compromises the engagement.
     and move on. Do NOT retry more than once — each retry depletes your context budget
     faster (the sub-agent crashes faster with less available context). 3+ retries of empty
     returns is ALWAYS wasteful.
+15. **Budget Exhaustion Signal**: If a sub-agent ran for 500+ seconds and returned empty
+    output or an error (no flag, no actionable finding), it consumed the available context
+    budget before completing. This is a BUDGET EXHAUSTION pattern — do NOT re-dispatch the
+    same sub-agent with the same prompt. The second attempt will have even less context and
+    will fail faster (degradation pattern: 897s→13s→4s). Instead:
+    a) If the sub-agent was exploit: switch attack vector or try a different exploit approach
+       with a narrower, more focused prompt.
+    b) If no alternative vector exists: `update_objective(status="blocked",
+       reason="budget exhaustion: sub-agent consumed full context without result")`
+    The signal is: duration ≥ 500s AND (empty return OR crash return). Duration < 500s with
+    empty return is a crash (Rule 14), not budget exhaustion.
 </CRITICAL_RULES>
 
 <ENVIRONMENT>

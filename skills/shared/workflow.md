@@ -227,6 +227,16 @@ The sandbox bash environment is intentionally restricted. The following patterns
 | Long pipelines without `set -o pipefail` | Failures hide behind the last successful command. |
 | Implicit-shell loops over network targets without per-iteration timeout | One slow host blocks all the others. |
 
+### TTY / ANSI escape noise
+
+Interactive tools emit ANSI escape codes (`\x1b[...m`, carriage returns, progress bars) when stdout is a TTY. In the sandbox these codes land verbatim in the tool result, polluting grep/parse output and inflating token count.
+
+**Rules:**
+- Always append `--no-color` (or `--color=never`) for tools that support it (`sqlmap --no-color`, `nmap --no-color`, `ffuf -no-color`, `hydra -o /tmp/out.txt`).
+- For tools without a flag, pipe through `cat`: `tool | cat` — redirecting stdout breaks the PTY isatty() check and suppresses ANSI codes.
+- Prefer explicit `-o /tmp/output.txt` file output for long-running tools; read the file afterward rather than capturing ANSI-polluted stdout.
+- Never use `script -q -c '...' /dev/null` to force PTY — it re-enables ANSI codes and adds an extra layer of timing unpredictability.
+
 ### Preferred pattern — Python heredoc with explicit timeouts
 
 ```bash
