@@ -37,9 +37,7 @@ from typing import Any
 log = logging.getLogger("decepticon.runtime.event_log")
 
 
-_WINDOWS = sys.platform == "win32"
-
-if _WINDOWS:
+if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
@@ -117,7 +115,7 @@ def _engagement_events_path(workspace_root: Path, engagement_id: str) -> Path:
 
 
 def _acquire_lock(fd: int) -> None:
-    if _WINDOWS:
+    if sys.platform == "win32":
         while True:
             try:
                 msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
@@ -129,7 +127,7 @@ def _acquire_lock(fd: int) -> None:
 
 
 def _release_lock(fd: int) -> None:
-    if _WINDOWS:
+    if sys.platform == "win32":
         try:
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         except OSError:
