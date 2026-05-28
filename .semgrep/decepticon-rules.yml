@@ -90,6 +90,8 @@ rules:
         - "benchmark/**"
         - ".env.example"
         - "**/litellm_startup.py"
+        - "packages/decepticon-core/decepticon_core/types/llm.py"
+        - "packages/decepticon-core/decepticon_core/utils/config.py"
 
   # ─── No assert in production code ────────────────────────────────────
   - id: decepticon-no-assert-in-prod
