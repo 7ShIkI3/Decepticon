@@ -514,7 +514,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.0.2
+          version: v2.3.0
           working-directory: clients/launcher
           args: --config=../../.golangci.yml --timeout=5m
 

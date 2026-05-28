@@ -1,8 +1,6 @@
 name: "Decepticon security scan (example)"
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +12,7 @@ jobs:
   decepticon-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: ${{ vars.ENABLE_DECEPTICON_SCAN == 'true' && secrets.ANTHROPIC_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v6
         with:
