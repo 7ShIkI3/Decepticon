@@ -16,7 +16,9 @@ heavier dependency.
 
 from __future__ import annotations
 
+import hmac
 import logging
+import os
 import time
 from dataclasses import asdict
 from typing import Any
@@ -72,19 +74,32 @@ if BaseModel is not None:
         scripts: dict[str, str] = {}
 
 
-def build_app(registry: SkillRegistry, *, started_at: float | None = None):
-    """Construct the FastAPI app bound to ``registry``.
-
-    The FastAPI import is lazy so this module can be imported in
-    environments without FastAPI (test fixtures, CLI ingester).
-    """
+def build_app(
+    registry: SkillRegistry,
+    *,
+    started_at: float | None = None,
+    api_key: str | None = None,
+):
     try:
-        from fastapi import FastAPI, HTTPException  # noqa: PLC0415
+        from fastapi import Depends, FastAPI, Header, HTTPException  # noqa: PLC0415
     except ImportError as exc:
         raise RuntimeError(
             "Skillogy server requires FastAPI + Pydantic. Install with: "
             "pip install fastapi pydantic uvicorn"
         ) from exc
+
+    _expected_key: str | None = (
+        api_key if api_key is not None else os.environ.get("SKILLOGY_API_KEY")
+    )
+
+    async def _require_key(authorization: str | None = Header(default=None)) -> None:
+        if _expected_key is None:
+            return
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if not hmac.compare_digest(token, _expected_key):
+            raise HTTPException(status_code=401, detail="invalid or missing API key")
+
+    _protected = [Depends(_require_key)]
 
     app = FastAPI(
         title="Skillogy",
@@ -101,7 +116,7 @@ def build_app(registry: SkillRegistry, *, started_at: float | None = None):
             "uptime_seconds": int(time.time() - boot_time),
         }
 
-    @app.post("/v1/skills:list")
+    @app.post("/v1/skills:list", dependencies=_protected)
     async def list_skills(req: ListReq) -> dict[str, Any]:
         resp = registry.list(
             SkillListRequest(
@@ -120,14 +135,14 @@ def build_app(registry: SkillRegistry, *, started_at: float | None = None):
             "total_count": resp.total_count,
         }
 
-    @app.post("/v1/skills:load")
+    @app.post("/v1/skills:load", dependencies=_protected)
     async def load_skill(req: LoadReq) -> dict[str, Any]:
         env = registry.load(req.path)
         if env is None:
             raise HTTPException(status_code=404, detail=f"skill not found: {req.path}")
         return {"skill": _envelope_to_payload(env, req.include_references, req.include_scripts)}
 
-    @app.post("/v1/skills:ingest")
+    @app.post("/v1/skills:ingest", dependencies=_protected)
     async def ingest_skill(req: IngestReq) -> dict[str, Any]:
         refs = {k: v.encode("utf-8") for k, v in req.references.items()}
         scripts = {k: v.encode("utf-8") for k, v in req.scripts.items()}
