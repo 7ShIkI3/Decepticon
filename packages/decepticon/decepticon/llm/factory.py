@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from enum import Enum
@@ -1000,6 +1001,47 @@ class _NvidiaNIMChatOpenAI(_ProxiedChatOpenAI):
         return payload
 
 
+# Patterns matching secret-shaped substrings that providers may echo back
+# inside HTTP error bodies. ``str(exc)`` for LiteLLM/openai errors is built
+# from that body, so it can reflect the Authorization/x-api-key/Bearer
+# credential we sent. Each pattern below scrubs one shape before the text is
+# interpolated into a user-facing RuntimeError that lands in CLI output/logs.
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # "Bearer <token>" auth scheme (RFC 6750), case-insensitive.
+    (re.compile(r"(?i)\bBearer\s+[\w.\-+/=]+"), "Bearer [REDACTED]"),
+    # Provider key prefixes: Anthropic sk-ant-* and OpenAI-style sk-* (any
+    # remaining long token after the prefix).
+    (re.compile(r"\bsk-(?:ant-)?[\w.\-]{8,}"), "[REDACTED]"),
+    # Header/field values for authorization / api_key / x-api-key, whether
+    # JSON ("authorization": "...") or kwarg (api_key=...). Keeps the key
+    # name so the guidance stays readable; only the value is scrubbed.
+    (
+        re.compile(
+            r"(?i)(['\"]?(?:authorization|x-api-key|api[_-]?key)['\"]?\s*[:=]\s*)"
+            r"(['\"]?)[^'\"\s,}]+\2"
+        ),
+        r"\1\2[REDACTED]\2",
+    ),
+    # Generic long opaque tokens (>=24 chars of key-ish alphabet) that survive
+    # the targeted passes above — e.g. provider keys without an sk- prefix.
+    (re.compile(r"\b[A-Za-z0-9_\-]{24,}\b"), "[REDACTED]"),
+)
+
+
+def _redact_secrets(text: str) -> str:
+    """Scrub credential-shaped substrings from upstream error text.
+
+    LiteLLM/openai surface the provider's raw HTTP response body via
+    ``str(exc)``; that body can echo the ``Authorization``/``x-api-key``/
+    ``Bearer`` value we sent. Redacting here keeps the actionable guidance
+    (status code, model id, human hint) intact while preventing the secret
+    from leaking into CLI output and logs.
+    """
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _reraise_if_connection_error(exc: Exception) -> None:
     err_type = type(exc).__name__
     if any(
@@ -1009,7 +1051,7 @@ def _reraise_if_connection_error(exc: Exception) -> None:
         for kw in ("connection refused", "connect error", "proxy", "unreachable")
     ):
         raise RuntimeError(
-            f"LLM proxy unreachable ({err_type}): {exc}. "
+            f"LLM proxy unreachable ({err_type}): {_redact_secrets(str(exc))}. "
             f"Check 'decepticon logs litellm' for details."
         ) from exc
 
@@ -1036,6 +1078,10 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     err_type = type(exc).__name__
     msg = str(exc)
     msg_lower = msg.lower()
+    # Match on the raw text (status codes / keywords are not secret-shaped),
+    # but interpolate the scrubbed copy so an echoed credential never reaches
+    # the user-facing message — see _redact_secrets.
+    safe_msg = _redact_secrets(msg)
 
     # LiteLLM puts a recognizable prefix in the inner message when the
     # proxy ran out of fallback options for a model_group — issue #107.
@@ -1046,14 +1092,14 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"Model '{model_name}' failed and no provider fallback was "
             f"available for it. Either configure another auth method in "
             f"DECEPTICON_AUTH_PRIORITY or fix the upstream error.\n"
-            f"Underlying: {msg}"
+            f"Underlying: {safe_msg}"
         ) from exc
 
     if "badrequest" in err_type.lower() or "code: 400" in msg_lower:
         raise RuntimeError(
             f"Model '{model_name}' rejected the request (400). "
             f"This usually means a parameter the model no longer supports "
-            f"(e.g. temperature on Claude Opus 4.7). Underlying: {msg}"
+            f"(e.g. temperature on Claude Opus 4.7). Underlying: {safe_msg}"
         ) from exc
 
     if (
@@ -1064,14 +1110,14 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
         raise RuntimeError(
             f"Model '{model_name}' rejected your credentials (401). "
             f"Check the API key for that provider in ~/.decepticon/.env, "
-            f"or run 'decepticon onboard --reset'.\nUnderlying: {msg}"
+            f"or run 'decepticon onboard --reset'.\nUnderlying: {safe_msg}"
         ) from exc
 
     if "ratelimit" in err_type.lower() or "code: 429" in msg_lower:
         raise RuntimeError(
             f"Model '{model_name}' hit the provider's rate limit (429). "
             f"Add another method to DECEPTICON_AUTH_PRIORITY so the agent "
-            f"can fall back when this happens.\nUnderlying: {msg}"
+            f"can fall back when this happens.\nUnderlying: {safe_msg}"
         ) from exc
 
     if "notfound" in err_type.lower() or "code: 404" in msg_lower:
@@ -1080,7 +1126,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"(404). For local Ollama, set OLLAMA_MODEL to something you "
             f"actually pulled ('ollama list'). For cloud providers, check "
             f"that the model id matches config/litellm.yaml.\n"
-            f"Underlying: {msg}"
+            f"Underlying: {safe_msg}"
         ) from exc
 
 

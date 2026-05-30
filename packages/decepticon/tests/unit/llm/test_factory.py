@@ -633,6 +633,38 @@ class TestActionableErrorTranslation:
         # Should not raise from the helper.
         self._translate(exc, "anthropic/claude-opus-4-7")
 
+    def test_401_redacts_bearer_token_keeps_guidance(self):
+        exc = type("AuthenticationError", (Exception,), {})(
+            "Error code: 401 - {'error': 'invalid_api_key'} "
+            "Authorization: Bearer sk-ant-SECRET123FAKEPLACEHOLDERTOKEN"
+        )
+        with pytest.raises(RuntimeError) as info:
+            self._translate(exc, "anthropic/claude-opus-4-7")
+        msg = str(info.value)
+        assert "sk-ant-SECRET123FAKEPLACEHOLDERTOKEN" not in msg
+        assert "SECRET123FAKEPLACEHOLDERTOKEN" not in msg
+        assert "[REDACTED]" in msg
+        assert "credentials (401)" in msg
+        assert "anthropic/claude-opus-4-7" in msg
+
+    def test_400_redacts_api_key_kwarg_keeps_guidance(self):
+        exc = Exception(
+            "Error code: 400 - bad request from provider with api_key=sk-SECRETfakeplaceholdervalue99"
+        )
+        with pytest.raises(RuntimeError) as info:
+            self._translate(exc, "openai/gpt-5.5")
+        msg = str(info.value)
+        assert "sk-SECRETfakeplaceholdervalue99" not in msg
+        assert "SECRETfakeplaceholdervalue99" not in msg
+        assert "[REDACTED]" in msg
+        assert "rejected the request (400)" in msg
+
+    def test_redact_secrets_preserves_nonsecret_text(self):
+        from decepticon.llm.factory import _redact_secrets
+
+        text = "No fallback model group found for model_group=anthropic/claude-opus-4-7."
+        assert _redact_secrets(text) == text
+
 
 # ── DeepSeek V4 Pro reasoning_content passthrough ────────────────────────
 
