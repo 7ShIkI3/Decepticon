@@ -42,6 +42,32 @@ class TestIAMPolicy:
         findings = analyze_iam_policy(policy)
         assert any("Wildcard s3:*" in f.title for f in findings)
 
+    def test_notaction_allow_flagged_as_near_wildcard(self) -> None:
+        policy = {
+            "Statement": [{"Effect": "Allow", "NotAction": ["iam:CreateUser"], "Resource": "*"}]
+        }
+        findings = analyze_iam_policy(policy)
+        assert any("near-wildcard" in f.title for f in findings)
+        assert any(f.severity == "high" for f in findings)
+
+    def test_notaction_does_not_match_privesc_primitive(self) -> None:
+        policy = {
+            "Statement": [
+                {"Effect": "Allow", "NotAction": ["iam:CreateAccessKey"], "Resource": "*"}
+            ]
+        }
+        findings = analyze_iam_policy(policy)
+        assert not any("CreateAccessKey" in f.title for f in findings)
+
+    def test_empty_action_produces_no_phantom_wildcard(self) -> None:
+        policy = {"Statement": [{"Effect": "Allow", "Action": [], "Resource": "*"}]}
+        assert analyze_iam_policy(policy) == []
+
+    def test_privesc_passrole_still_flagged(self) -> None:
+        policy = {"Statement": [{"Effect": "Allow", "Action": ["iam:PassRole"], "Resource": "*"}]}
+        findings = analyze_iam_policy(policy)
+        assert any("PassRole" in f.title for f in findings)
+
 
 class TestBucketScan:
     def test_s3_scheme(self) -> None:

@@ -134,7 +134,36 @@ def analyze_iam_policy(policy: str | dict[str, Any]) -> list[IAMFinding]:
         effect = (stmt.get("Effect") or "Allow").lower()
         if effect != "allow":
             continue
-        for action in _as_list(stmt.get("Action") or stmt.get("NotAction") or "*"):
+        resources = _as_list(stmt.get("Resource") or "*")
+        broad_resource = any(str(r) == "*" for r in resources)
+        # Security: NotAction inverts an Allow (grants every action EXCEPT the
+        # listed ones), so it must not be iterated like an Action allow-list.
+        # Branch on key presence (not truthiness) so an explicit empty Action
+        # grants nothing instead of falling through to a phantom wildcard.
+        if "Action" in stmt:
+            actions = _as_list(stmt["Action"])
+        elif "NotAction" in stmt:
+            if broad_resource:
+                idx += 1
+                excluded = ", ".join(str(a) for a in _as_list(stmt["NotAction"])) or "(none)"
+                findings.append(
+                    IAMFinding(
+                        id=f"iam-{idx:04d}",
+                        severity="high",
+                        title="Allow NotAction on all resources (near-wildcard)",
+                        detail=(
+                            "Effect=Allow with NotAction on Resource=* grants every "
+                            f"action except: {excluded} — effectively a near-wildcard "
+                            "privilege over the account."
+                        ),
+                        action="*",
+                        resource="*",
+                    )
+                )
+            continue
+        else:
+            actions = ["*"]
+        for action in actions:
             act = str(action).lower()
             for resource in _as_list(stmt.get("Resource") or "*"):
                 res = str(resource)
