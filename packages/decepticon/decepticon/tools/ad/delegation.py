@@ -37,11 +37,9 @@ _SENSITIVE_SPNS = {"ldap", "cifs", "http", "host", "mssql", "krbtgt"}
 
 
 def _is_dc(node_props: dict[str, Any]) -> bool:
-    """Heuristic: a node is a domain controller if its label contains 'DC' or admincount is set."""
     label = str(node_props.get("label", "")).upper()
-    bh_type = node_props.get("bh_type", "")
-    # DCs are typically in the Domain Controllers OU or have specific markers
-    return bh_type == "Computer" and (
+    bh_type = str(node_props.get("bh_type", "")).lower()
+    return bh_type == "computer" and (
         node_props.get("is_dc", False) or "DOMAIN CONTROLLER" in label
     )
 
@@ -64,7 +62,7 @@ def analyze_delegation(graph: KnowledgeGraph) -> list[DelegationFinding]:
     # Pass 1: unconstrained delegation via node properties
     for node in graph.nodes.values():
         bh_type = node.props.get("bh_type", "")
-        if bh_type != "Computer":
+        if str(bh_type).lower() != "computer":
             continue
         trusted = node.props.get("trustedfordelegation", False)
         unconstr = node.props.get("unconstraineddelegation", False)
