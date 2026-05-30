@@ -21,7 +21,13 @@ from litellm_dynamic_config import (  # noqa: E402
     has_subscription_routes,
     write_dynamic_config,
 )
-from ollama_probe import extract_ollama_models, has_ollama_route, probe  # noqa: E402
+from ollama_probe import (  # noqa: E402
+    CLOUD_OLLAMA_PREFIXES,
+    LOCAL_OLLAMA_PREFIXES,
+    extract_ollama_models,
+    probe,
+    probe_cloud,
+)
 
 
 def _replace_config_arg() -> None:
@@ -79,15 +85,31 @@ _replace_config_arg()
 
 def _probe_ollama_if_configured() -> None:
     """Best-effort Ollama reachability + tool-capability probe; never
-    blocks proxy boot."""
+    blocks proxy boot.
+
+    Local Ollama and Ollama Cloud are probed separately — they hit
+    different endpoints with different auth. A cloud user (empty
+    OLLAMA_API_BASE) would otherwise short-circuit on the local
+    'OLLAMA_API_BASE is empty' check and never get a cloud diagnostic.
+    """
     try:
         requested = collect_requested_models()
-        if not has_ollama_route(requested):
-            return
-        models = extract_ollama_models(requested)
-        base = os.environ.get("OLLAMA_API_BASE", "").strip()
-        for line in probe(base, models):
-            print(f"[decepticon ollama] {line}", flush=True)
+
+        local_models = extract_ollama_models(requested, prefixes=LOCAL_OLLAMA_PREFIXES)
+        if local_models:
+            base = os.environ.get("OLLAMA_API_BASE", "").strip()
+            for line in probe(base, local_models):
+                print(f"[decepticon ollama] {line}", flush=True)
+
+        cloud_models = extract_ollama_models(requested, prefixes=CLOUD_OLLAMA_PREFIXES)
+        if cloud_models:
+            cloud_base = os.environ.get("OLLAMA_CLOUD_API_BASE", "").strip()
+            cloud_key = (
+                os.environ.get("OLLAMA_CLOUD_API_KEY", "").strip()
+                or os.environ.get("OLLAMA_API_KEY", "").strip()
+            )
+            for line in probe_cloud(cloud_base, cloud_models, api_key=cloud_key):
+                print(f"[decepticon ollama-cloud] {line}", flush=True)
     except Exception as exc:  # noqa: BLE001
         # Observability-only — never let a probe bug crash proxy boot.
         print(f"[decepticon ollama] probe failed unexpectedly: {exc}", flush=True)

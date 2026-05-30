@@ -354,7 +354,7 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
                 params["api_base"] = "http://host.docker.internal:11434"
         elif provider == "ollama_cloud":
             # Ollama Cloud (https://docs.ollama.com/cloud) — OpenAI-compatible
-            # at ``https://ollama.com/v1`` with Bearer auth via OLLAMA_API_KEY.
+            # at ``https://ollama.com/v1`` with Bearer auth via the cloud key.
             # No native LiteLLM ``ollama_cloud/`` provider yet, so remap the
             # route to ``openai/<model>`` with explicit api_base override.
             # ``OLLAMA_CLOUD_API_BASE`` defaults to ``https://ollama.com/v1``
@@ -369,9 +369,21 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
                 if os.environ.get("OLLAMA_CLOUD_API_BASE", "").strip()
                 else "https://ollama.com/v1"
             )
+            # The onboarding wizard (onboard.go) and setup docs write the
+            # key as OLLAMA_CLOUD_API_KEY; the official Ollama convention is
+            # OLLAMA_API_KEY. Accept either, preferring the namespaced
+            # _CLOUD_ form, so a user who followed `decepticon onboard`
+            # authenticates instead of sending an empty Bearer token and
+            # 401-ing on every turn — the "stuck in the Soundwave interview"
+            # loop reported on Ollama Cloud.
+            cloud_key_env = (
+                "OLLAMA_CLOUD_API_KEY"
+                if os.environ.get("OLLAMA_CLOUD_API_KEY", "").strip()
+                else "OLLAMA_API_KEY"
+            )
             params = {
                 "model": f"openai/{actual_model}",
-                "api_key": "os.environ/OLLAMA_API_KEY",
+                "api_key": f"os.environ/{cloud_key_env}",
                 "api_base": cloud_base,
             }
         elif provider == "bedrock":
