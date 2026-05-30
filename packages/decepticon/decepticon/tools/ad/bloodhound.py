@@ -15,6 +15,7 @@ membership / session edge uses the semantically correct relationship type.
 
 from __future__ import annotations
 
+import io
 import json
 import zipfile
 from dataclasses import dataclass
@@ -228,6 +229,7 @@ def merge_bloodhound_json(
                 stats.users += inc.users
                 stats.computers += inc.computers
                 stats.groups += inc.groups
+                stats.domains += inc.domains
                 stats.gpos += inc.gpos
                 stats.ous += inc.ous
                 stats.edges += inc.edges
@@ -268,21 +270,33 @@ def merge_bloodhound_json(
     return stats
 
 
+_MAX_ENTRY_SIZE = 100_000_000  # per-entry decompressed-byte cap (zip-bomb defense)
+
+
 def ingest_bloodhound_zip(path: str | Path, graph: KnowledgeGraph) -> ImportStats:
     """Walk a BloodHound collector zip and merge every JSON file inside."""
     total = ImportStats()
     p = Path(path)
-    _MAX_ENTRY_SIZE = 100_000_000  # 100 MB cap per entry (zip bomb defense)
 
     with zipfile.ZipFile(p) as zf:
         for name in zf.namelist():
             if not name.lower().endswith(".json"):
                 continue
-            info = zf.getinfo(name)
-            if info.file_size > _MAX_ENTRY_SIZE:
-                continue
+            # Stream-read and enforce the cap on actual decompressed bytes.
+            # Trusting info.file_size is unsafe — an attacker controls the
+            # declared uncompressed size in the ZIP central directory.
             try:
-                raw = zf.read(name)
+                buf = io.BytesIO()
+                with zf.open(name) as entry:
+                    accumulated = 0
+                    for chunk in iter(lambda: entry.read(65536), b""):
+                        accumulated += len(chunk)
+                        if accumulated > _MAX_ENTRY_SIZE:
+                            break
+                        buf.write(chunk)
+                if accumulated > _MAX_ENTRY_SIZE:
+                    continue
+                raw = buf.getvalue()
                 data = json.loads(raw.decode("utf-8", errors="replace"))
             except (OSError, json.JSONDecodeError):
                 continue

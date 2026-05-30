@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import zipfile
+from pathlib import Path
+
+import pytest
+
 from decepticon.tools.ad.adcs import analyze_adcs_templates
-from decepticon.tools.ad.bloodhound import merge_bloodhound_json
+from decepticon.tools.ad.bloodhound import ingest_bloodhound_zip, merge_bloodhound_json
 from decepticon.tools.ad.dcsync import dcsync_candidates
 from decepticon.tools.ad.kerberos import classify_hashcat_hash, parse_ticket
 from decepticon_core.types.kg import KnowledgeGraph
@@ -73,6 +78,38 @@ class TestBloodHoundIngest:
             g,
         )
         assert stats.users == 1
+
+    def test_zip_bomb_oversized_entry_is_skipped(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import decepticon.tools.ad.bloodhound as bh_mod
+
+        monkeypatch.setattr(bh_mod, "_MAX_ENTRY_SIZE", 100)
+
+        content = b'{"meta":{"type":"users"},"data":[]}' + b"x" * 200
+        zip_path = tmp_path / "test.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("users.json", content)
+
+        g = KnowledgeGraph()
+        stats = ingest_bloodhound_zip(zip_path, g)
+        assert stats.users == 0
+
+    def test_domains_stat_accumulated_from_list(self) -> None:
+        payload = [
+            {
+                "meta": {"type": "domains"},
+                "data": [
+                    {
+                        "ObjectIdentifier": "S-1-5-21-9-9-9-0",
+                        "Properties": {"name": "corp.local"},
+                    }
+                ],
+            }
+        ]
+        g = KnowledgeGraph()
+        stats = merge_bloodhound_json(payload, g)
+        assert stats.domains > 0
 
     def test_dcsync_detection(self) -> None:
         bh = {

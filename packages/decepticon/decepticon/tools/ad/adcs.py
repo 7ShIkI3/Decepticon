@@ -253,7 +253,11 @@ def _ca_analysis(name: str, ca: dict[str, Any]) -> list[ADCSFinding]:
         )
     # ESC10: Weak certificate mapping at CA level
     mapping = ca.get("certificate_mapping_methods", ca.get("CertificateMappingMethods"))
-    if mapping is not None and (int(mapping) & 0x4):
+    try:
+        m = int(mapping) if mapping is not None else 0
+    except (TypeError, ValueError):
+        m = 0
+    if m & 0x4:
         findings.append(
             ADCSFinding(
                 template=name,
