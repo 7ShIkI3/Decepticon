@@ -1,20 +1,18 @@
 """LiteLLM custom handler for Google Gemini Advanced subscription.
 
-Routes requests through Gemini's web backend using session cookies from an
-authenticated Google One AI Premium subscriber. Enables Gemini 2.5 Pro/Flash
+Routes requests through Gemini's web backend using OAuth2 bearer tokens from
+an authenticated Google One AI Premium subscriber. Enables Gemini 2.5 Pro/Flash
 without API billing.
 
 Token sources (checked in order):
   1. GEMINI_ACCESS_TOKEN env var (OAuth2 access token)
-  2. GEMINI_SESSION_COOKIES env var (JSON-encoded cookie dict)
-  3. ~/.config/gemini/tokens.json
+  2. ~/.config/gemini/tokens.json
 
 Model names: gemini-sub/gemini-2.5-pro, gemini-sub/gemini-2.5-flash, etc.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -54,15 +52,6 @@ def _load_tokens() -> dict[str, Any] | None:
     access_token = os.environ.get("GEMINI_ACCESS_TOKEN", "").strip()
     if access_token:
         return {"accessToken": access_token, "expiresAt": 0, "source": "env"}
-
-    cookies_json = os.environ.get("GEMINI_SESSION_COOKIES", "").strip()
-    if cookies_json:
-        try:
-            cookies = json.loads(cookies_json)
-            if isinstance(cookies, dict):
-                return {"cookies": cookies, "source": "env_cookies"}
-        except json.JSONDecodeError:
-            _log.debug("Malformed GEMINI_SESSION_COOKIES JSON")
 
     return _gemini_file_cache.get()
 
@@ -225,8 +214,8 @@ class GeminiSubHandler(CustomLLM):
         if resp.status_code == 401:
             raise litellm.AuthenticationError(
                 message=(
-                    "Gemini Advanced authentication was rejected. Re-extract the "
-                    f"GEMINI_SESSION_COOKIES / refresh GEMINI_ACCESS_TOKEN. Underlying: {resp.text}"
+                    "Gemini Advanced authentication was rejected. "
+                    f"Refresh GEMINI_ACCESS_TOKEN or update ~/.config/gemini/tokens.json. Underlying: {resp.text}"
                 ),
                 model=model,
                 llm_provider="gemini-sub",
