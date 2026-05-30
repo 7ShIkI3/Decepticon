@@ -31,6 +31,7 @@ from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
+from decepticon.tools.research.dedupe import kg_dedupe_findings
 from decepticon.tools.research.health import backend_health
 from decepticon.tools.research.patch import PATCH_TOOLS
 from decepticon.tools.research.sarif import ingest_sarif_file
@@ -2352,6 +2353,7 @@ RESEARCH_TOOLS = [
     kg_neighbors,
     kg_stats,
     kg_backend_health,
+    kg_dedupe_findings,
     kg_ingest_nmap_xml,
     kg_ingest_nuclei_jsonl,
     kg_ingest_subfinder,
