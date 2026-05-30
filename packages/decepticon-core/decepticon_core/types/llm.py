@@ -537,20 +537,27 @@ def _resolve_ollama_model() -> str | None:
 def _resolve_ollama_cloud_model() -> str | None:
     """Return the LiteLLM model id for the user's Ollama Cloud, or None.
 
-    Reads ``OLLAMA_CLOUD_API_BASE`` / ``OLLAMA_API_KEY`` (per Ollama Cloud
+    Reads ``OLLAMA_CLOUD_API_BASE`` / the cloud API key (per Ollama Cloud
     docs at https://docs.ollama.com/cloud) and ``OLLAMA_CLOUD_MODEL`` from
     the environment. Falls back to ``_OLLAMA_CLOUD_DEFAULT_MODEL`` when
     the base URL is set but no model is specified. Returns None when no
     cloud endpoint is configured at all.
 
+    The key is read from ``OLLAMA_CLOUD_API_KEY`` first (what the onboard
+    wizard and setup docs write), falling back to ``OLLAMA_API_KEY`` (the
+    official Ollama convention) — the dynamic-config builder applies the
+    same precedence when wiring Bearer auth.
+
     Uses a distinct ``ollama_cloud/`` provider prefix (not ``ollama_chat/``)
     so the dynamic-config builder can route to the cloud's OpenAI-
-    compatible endpoint (``https://ollama.com/v1``) with Bearer auth via
-    ``OLLAMA_API_KEY`` instead of pointing at the local Ollama instance's
-    ``OLLAMA_API_BASE``.
+    compatible endpoint (``https://ollama.com/v1``) with Bearer auth
+    instead of pointing at the local Ollama instance's ``OLLAMA_API_BASE``.
     """
     base = os.getenv("OLLAMA_CLOUD_API_BASE", "").strip()
-    key = os.getenv("OLLAMA_API_KEY", "").strip()
+    key = (
+        os.getenv("OLLAMA_CLOUD_API_KEY", "").strip()
+        or os.getenv("OLLAMA_API_KEY", "").strip()
+    )
     model = os.getenv("OLLAMA_CLOUD_MODEL", "").strip()
     if not base and not key and not model:
         return None

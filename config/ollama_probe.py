@@ -29,7 +29,18 @@ from urllib.parse import urlsplit
 # legacy models often don't.
 _TOOLS_CAPABILITY = "tools"
 
-_OLLAMA_PROVIDER_PREFIXES = ("ollama_chat", "ollama", "ollama_cloud")
+# Local Ollama (host or WSL) vs Ollama Cloud (https://ollama.com). They
+# probe different endpoints with different auth, so the startup script
+# separates requested models by provider prefix before probing.
+LOCAL_OLLAMA_PREFIXES = ("ollama_chat", "ollama")
+CLOUD_OLLAMA_PREFIXES = ("ollama_cloud",)
+_OLLAMA_PROVIDER_PREFIXES = LOCAL_OLLAMA_PREFIXES + CLOUD_OLLAMA_PREFIXES
+
+# Ollama Cloud's default base is the OpenAI-compatible ``/v1`` path, but
+# the native ``/api/tags`` and ``/api/show`` capability endpoints live at
+# the root. ``_native_api_base`` strips a trailing ``/v1`` so the probe
+# targets the native API.
+_CLOUD_DEFAULT_BASE = "https://ollama.com"
 
 _HttpOpener = Callable[[Any, float], Any]
 
@@ -42,23 +53,77 @@ class ProbeResult:
     message: str | None = None
 
 
-def has_ollama_route(model_ids: Iterable[str]) -> bool:
-    """True when at least one requested model uses an Ollama provider."""
+def has_ollama_route(
+    model_ids: Iterable[str],
+    prefixes: Iterable[str] = _OLLAMA_PROVIDER_PREFIXES,
+) -> bool:
+    """True when at least one requested model uses an Ollama provider.
+
+    ``prefixes`` narrows the match — pass ``LOCAL_OLLAMA_PREFIXES`` or
+    ``CLOUD_OLLAMA_PREFIXES`` to test one family. Defaults to all.
+    """
+    wanted = {p.lower() for p in prefixes}
     for model_id in model_ids:
         prefix = model_id.split("/", 1)[0].lower()
-        if prefix in _OLLAMA_PROVIDER_PREFIXES:
+        if prefix in wanted:
             return True
     return False
 
 
-def extract_ollama_models(model_ids: Iterable[str]) -> list[str]:
-    """Strip the Ollama provider prefix; skip non-Ollama and bare-prefix entries."""
+def extract_ollama_models(
+    model_ids: Iterable[str],
+    prefixes: Iterable[str] = _OLLAMA_PROVIDER_PREFIXES,
+) -> list[str]:
+    """Strip the Ollama provider prefix; skip non-Ollama and bare-prefix entries.
+
+    ``prefixes`` narrows which providers are extracted — pass
+    ``LOCAL_OLLAMA_PREFIXES`` or ``CLOUD_OLLAMA_PREFIXES`` to pull just
+    one family (local vs cloud probe different endpoints). Defaults to all.
+    """
+    wanted = {p.lower() for p in prefixes}
     out: list[str] = []
     for model_id in model_ids:
         prefix, _, tag = model_id.partition("/")
-        if prefix.lower() in _OLLAMA_PROVIDER_PREFIXES and tag:
+        if prefix.lower() in wanted and tag:
             out.append(tag)
     return out
+
+
+def _native_api_base(base_url: str) -> str:
+    """Return the native Ollama API root for a (possibly ``/v1``) base.
+
+    Ollama Cloud's ``/api/tags`` and ``/api/show`` live at the root, not
+    under the OpenAI-compatible ``/v1`` path. Strip a trailing ``/v1`` so
+    the capability probe targets ``https://ollama.com`` rather than
+    ``https://ollama.com/v1`` (which 404s the native endpoints). Defaults
+    to ``https://ollama.com`` when the base is empty.
+    """
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return _CLOUD_DEFAULT_BASE
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    return base or _CLOUD_DEFAULT_BASE
+
+
+def _build_request(
+    url: str,
+    *,
+    data: bytes | None = None,
+    method: str = "GET",
+    auth_token: str | None = None,
+) -> urllib.request.Request:
+    """Build a urllib Request with optional JSON body + Bearer auth.
+
+    Ollama Cloud requires ``Authorization: Bearer <key>``; local Ollama
+    needs no auth, so ``auth_token`` is omitted there.
+    """
+    headers: dict[str, str] = {}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    return urllib.request.Request(url, data=data, method=method, headers=headers)
 
 
 def _default_opener(url_or_request: Any, timeout: float) -> Any:
@@ -165,14 +230,32 @@ def _classify_transport_error(base_url: str, err: BaseException) -> str:
     return f"Cannot reach {base_url}: {err}"
 
 
+def _classify_auth_error(base_url: str, code: int) -> str:
+    """One-line hint for a 401/403 from Ollama Cloud — almost always a
+    missing or wrong API key. The onboard wizard writes the key as
+    OLLAMA_CLOUD_API_KEY; the runtime also accepts OLLAMA_API_KEY."""
+    return (
+        f"Ollama Cloud at {base_url} rejected the request (HTTP {code}). "
+        "The API key is missing or invalid — set OLLAMA_CLOUD_API_KEY "
+        "(or OLLAMA_API_KEY) to a valid key from "
+        "https://ollama.com/settings/keys. Until then every agent turn "
+        "401s and the Soundwave interview can't hand off."
+    )
+
+
 def reachability(
     base_url: str,
     *,
     timeout: float = 2.0,
     opener: _HttpOpener | None = None,
+    auth_token: str | None = None,
 ) -> ProbeResult:
     """Probe ``base_url/api/tags``. Pre-flight rejects loopback hosts —
-    from inside a container they're never the host running Ollama."""
+    from inside a container they're never the host running Ollama.
+
+    ``auth_token`` attaches Bearer auth for Ollama Cloud; local Ollama
+    omits it.
+    """
     if not base_url.strip():
         return ProbeResult(False, "OLLAMA_API_BASE is empty.")
 
@@ -188,8 +271,9 @@ def reachability(
         )
 
     open_url = opener or _default_opener
+    request = _build_request(f"{base_url.rstrip('/')}/api/tags", auth_token=auth_token)
     try:
-        with open_url(f"{base_url.rstrip('/')}/api/tags", timeout) as resp:
+        with open_url(request, timeout) as resp:
             status = getattr(resp, "status", 200)
             if status >= 400:
                 return ProbeResult(
@@ -198,6 +282,8 @@ def reachability(
                 )
             return ProbeResult(True)
     except urllib.error.HTTPError as err:
+        if err.code in (401, 403):
+            return ProbeResult(False, _classify_auth_error(base_url, err.code))
         return ProbeResult(
             False,
             f"Ollama responded with HTTP {err.code} at {base_url}: {err.reason}",
@@ -212,18 +298,23 @@ def tool_capability(
     *,
     timeout: float = 5.0,
     opener: _HttpOpener | None = None,
+    auth_token: str | None = None,
 ) -> ProbeResult:
-    """Confirm ``model`` advertises ``tools`` via ``/api/show`` capabilities."""
+    """Confirm ``model`` advertises ``tools`` via ``/api/show`` capabilities.
+
+    ``auth_token`` attaches Bearer auth for Ollama Cloud; local Ollama
+    omits it.
+    """
     if not base_url.strip() or not model.strip():
         return ProbeResult(False, "Missing OLLAMA_API_BASE or model name for capability probe.")
 
     open_url = opener or _default_opener
     payload = json.dumps({"name": model}).encode("utf-8")
-    request = urllib.request.Request(
+    request = _build_request(
         f"{base_url.rstrip('/')}/api/show",
         data=payload,
         method="POST",
-        headers={"Content-Type": "application/json"},
+        auth_token=auth_token,
     )
 
     try:
@@ -235,6 +326,8 @@ def tool_capability(
                 False,
                 f"Ollama model {model!r} is not pulled on this host. Run: ollama pull {model}",
             )
+        if err.code in (401, 403):
+            return ProbeResult(False, _classify_auth_error(base_url, err.code))
         return ProbeResult(
             False,
             f"Ollama /api/show returned HTTP {err.code} for {model!r}: {err.reason}",
@@ -296,11 +389,60 @@ def probe(
     return lines
 
 
+def probe_cloud(
+    base_url: str,
+    models: Iterable[str],
+    *,
+    api_key: str,
+    opener: _HttpOpener | None = None,
+) -> list[str]:
+    """Ollama Cloud reachability + per-model tool-capability.
+
+    Cloud differs from local Ollama in two ways the local ``probe`` can't
+    handle: it requires a Bearer API key, and its native ``/api/show``
+    capability endpoint lives at the root (``https://ollama.com``), not
+    under the OpenAI-compatible ``/v1`` path that ``OLLAMA_CLOUD_API_BASE``
+    defaults to. Returns operator log lines; empty means clean.
+
+    A missing API key is reported up front — without it every request
+    401s and the operator gets stuck on the Soundwave interview with no
+    diagnostic, which is exactly the loop reported on Ollama Cloud.
+    """
+    lines: list[str] = []
+
+    if not api_key.strip():
+        lines.append(
+            "Ollama Cloud is selected but no API key is set. `decepticon "
+            "onboard` writes OLLAMA_CLOUD_API_KEY — set it (or "
+            "OLLAMA_API_KEY) to a key from "
+            "https://ollama.com/settings/keys, otherwise every request "
+            "401s and the Soundwave interview can't hand off to Decepticon."
+        )
+        return lines
+
+    native = _native_api_base(base_url)
+    reach = reachability(native, opener=opener, auth_token=api_key)
+    if reach.message:
+        lines.append(reach.message)
+    if not reach.ok:
+        return lines
+
+    for model in models:
+        cap = tool_capability(native, model, opener=opener, auth_token=api_key)
+        if cap.message:
+            lines.append(cap.message)
+
+    return lines
+
+
 __all__ = [
+    "CLOUD_OLLAMA_PREFIXES",
+    "LOCAL_OLLAMA_PREFIXES",
     "ProbeResult",
     "extract_ollama_models",
     "has_ollama_route",
     "probe",
+    "probe_cloud",
     "reachability",
     "tool_capability",
 ]

@@ -86,6 +86,35 @@ def test_build_model_entry_ollama_chat_default_when_env_unset(monkeypatch) -> No
     }
 
 
+def test_build_model_entry_ollama_cloud_prefers_cloud_api_key(monkeypatch) -> None:
+    """OLLAMA_CLOUD_API_KEY (what the onboard wizard writes) wins over
+    OLLAMA_API_KEY so a user who followed `decepticon onboard` authenticates."""
+    monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", "sk-cloud")
+    monkeypatch.setenv("OLLAMA_API_KEY", "sk-legacy")
+    monkeypatch.delenv("OLLAMA_CLOUD_API_BASE", raising=False)
+    entry = build_model_entry("ollama_cloud/qwen3-coder:480b")
+
+    assert entry["litellm_params"] == {
+        "model": "openai/qwen3-coder:480b",
+        "api_key": "os.environ/OLLAMA_CLOUD_API_KEY",
+        "api_base": "https://ollama.com/v1",
+    }
+
+
+def test_build_model_entry_ollama_cloud_falls_back_to_ollama_api_key(monkeypatch) -> None:
+    """When only OLLAMA_API_KEY (the official Ollama var) is set, use it."""
+    monkeypatch.delenv("OLLAMA_CLOUD_API_KEY", raising=False)
+    monkeypatch.setenv("OLLAMA_API_KEY", "sk-legacy")
+    monkeypatch.setenv("OLLAMA_CLOUD_API_BASE", "https://ollama.com/v1")
+    entry = build_model_entry("ollama_cloud/gpt-oss:120b")
+
+    assert entry["litellm_params"] == {
+        "model": "openai/gpt-oss:120b",
+        "api_key": "os.environ/OLLAMA_API_KEY",
+        "api_base": "os.environ/OLLAMA_CLOUD_API_BASE",
+    }
+
+
 def test_validate_model_name_rejects_bare_or_internal_routes() -> None:
     with pytest.raises(ValueError, match="provider/model"):
         validate_model_name("gpt-4.1")

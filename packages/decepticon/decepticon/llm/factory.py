@@ -247,12 +247,18 @@ _OAUTH_CREDENTIAL_PATHS: dict[AuthMethod, tuple[tuple[str, str], ...]] = {
 def _ollama_cloud_configured() -> bool:
     """Return True when the user has wired up Ollama Cloud.
 
-    Either ``OLLAMA_CLOUD_API_BASE`` (preferred — explicit endpoint) or
-    ``OLLAMA_CLOUD_MODEL`` is enough to opt in.
+    Any of ``OLLAMA_CLOUD_API_BASE`` (preferred — explicit endpoint),
+    ``OLLAMA_CLOUD_MODEL``, or a cloud API key
+    (``OLLAMA_CLOUD_API_KEY`` / ``OLLAMA_API_KEY``) is enough to opt in.
+    The key is included so a user who pasted only their key into
+    `decepticon onboard` (relying on the default base + model) is still
+    detected as a cloud user instead of silently falling through.
     """
     return bool(
         os.getenv("OLLAMA_CLOUD_API_BASE", "").strip()
         or os.getenv("OLLAMA_CLOUD_MODEL", "").strip()
+        or os.getenv("OLLAMA_CLOUD_API_KEY", "").strip()
+        or os.getenv("OLLAMA_API_KEY", "").strip()
     )
 
 

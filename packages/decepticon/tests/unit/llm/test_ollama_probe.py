@@ -35,8 +35,12 @@ ProbeResult = _module.ProbeResult
 extract_ollama_models = _module.extract_ollama_models
 has_ollama_route = _module.has_ollama_route
 probe = _module.probe
+probe_cloud = _module.probe_cloud
 reachability = _module.reachability
 tool_capability = _module.tool_capability
+LOCAL_OLLAMA_PREFIXES = _module.LOCAL_OLLAMA_PREFIXES
+CLOUD_OLLAMA_PREFIXES = _module.CLOUD_OLLAMA_PREFIXES
+_native_api_base = _module._native_api_base
 
 
 # ── Fake response / opener helpers ────────────────────────────────────
@@ -338,3 +342,119 @@ def test_probe_result_is_immutable() -> None:
     result = ProbeResult(ok=True)
     with pytest.raises(Exception):
         result.ok = False  # type: ignore[misc]
+
+
+# ── prefix filtering (local vs cloud separation) ──────────────────────
+
+
+class TestPrefixFiltering:
+    def test_extract_local_only(self) -> None:
+        ids = ["ollama_chat/a", "ollama_cloud/b", "openai/gpt-5"]
+        assert extract_ollama_models(ids, prefixes=LOCAL_OLLAMA_PREFIXES) == ["a"]
+
+    def test_extract_cloud_only(self) -> None:
+        ids = ["ollama_chat/a", "ollama_cloud/b", "openai/gpt-5"]
+        assert extract_ollama_models(ids, prefixes=CLOUD_OLLAMA_PREFIXES) == ["b"]
+
+    def test_has_route_narrowed_to_cloud(self) -> None:
+        assert has_ollama_route(["ollama_chat/a"], prefixes=CLOUD_OLLAMA_PREFIXES) is False
+        assert has_ollama_route(["ollama_cloud/b"], prefixes=CLOUD_OLLAMA_PREFIXES) is True
+
+
+# ── _native_api_base (strip /v1 for native capability endpoints) ──────
+
+
+class TestNativeApiBase:
+    def test_strips_trailing_v1(self) -> None:
+        assert _native_api_base("https://ollama.com/v1") == "https://ollama.com"
+
+    def test_strips_v1_with_trailing_slash(self) -> None:
+        assert _native_api_base("https://ollama.com/v1/") == "https://ollama.com"
+
+    def test_empty_defaults_to_cloud(self) -> None:
+        assert _native_api_base("") == "https://ollama.com"
+
+    def test_non_v1_base_unchanged(self) -> None:
+        assert _native_api_base("https://self.host/ollama") == "https://self.host/ollama"
+
+
+# ── probe_cloud ───────────────────────────────────────────────────────
+
+
+def _cloud_opener(
+    *,
+    tags: _FakeResponse,
+    show: _FakeResponse,
+    captured: dict[str, Any] | None = None,
+) -> Any:
+    """Opener that routes /api/tags vs /api/show and records the last
+    request's URL + Authorization header for assertions."""
+
+    def _opener(url_or_request: Any, timeout: float) -> _FakeResponse:
+        del timeout
+        url = (
+            url_or_request.full_url
+            if hasattr(url_or_request, "full_url")
+            else str(url_or_request)
+        )
+        if captured is not None:
+            captured["url"] = url
+            if hasattr(url_or_request, "get_header"):
+                captured["auth"] = url_or_request.get_header("Authorization")
+        return tags if url.endswith("/api/tags") else show
+
+    return _opener
+
+
+class TestProbeCloud:
+    def test_missing_key_reported_without_network(self) -> None:
+        lines = probe_cloud("https://ollama.com/v1", ["gpt-oss:120b"], api_key="")
+        assert len(lines) == 1
+        assert "OLLAMA_CLOUD_API_KEY" in lines[0]
+
+    def test_sends_bearer_and_targets_native_base(self) -> None:
+        captured: dict[str, Any] = {}
+        opener = _cloud_opener(
+            tags=_FakeResponse(status=200, body=b'{"models":[]}'),
+            show=_show_response(["completion", "tools"]),
+            captured=captured,
+        )
+        lines = probe_cloud(
+            "https://ollama.com/v1",
+            ["gpt-oss:120b"],
+            api_key="sk-cloud",
+            opener=opener,
+        )
+        assert lines == []
+        # Capability probe hit the native root, not the /v1 path.
+        assert captured["url"] == "https://ollama.com/api/show"
+        assert captured["auth"] == "Bearer sk-cloud"
+
+    def test_401_reports_auth_remediation(self) -> None:
+        opener = _opener_raising(
+            urllib.error.HTTPError(
+                url="https://ollama.com/api/tags",
+                code=401,
+                msg="Unauthorized",
+                hdrs=None,  # type: ignore[arg-type]
+                fp=BytesIO(b""),
+            )
+        )
+        lines = probe_cloud(
+            "https://ollama.com/v1", ["gpt-oss:120b"], api_key="sk-bad", opener=opener
+        )
+        assert len(lines) == 1
+        assert "401" in lines[0]
+        assert "OLLAMA_CLOUD_API_KEY" in lines[0]
+
+    def test_model_without_tools_reported(self) -> None:
+        opener = _cloud_opener(
+            tags=_FakeResponse(status=200, body=b'{"models":[]}'),
+            show=_show_response(["completion"]),
+        )
+        lines = probe_cloud(
+            "https://ollama.com/v1", ["llama3.2"], api_key="sk-cloud", opener=opener
+        )
+        assert len(lines) == 1
+        assert "llama3.2" in lines[0]
+        assert "'tools'" in lines[0]
