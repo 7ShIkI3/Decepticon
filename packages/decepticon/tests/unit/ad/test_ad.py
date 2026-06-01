@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from decepticon.tools.ad.adcs import analyze_adcs_templates
-from decepticon.tools.ad.bloodhound import ingest_bloodhound_zip, merge_bloodhound_json
+import decepticon.tools.ad.bloodhound as bh_mod
 from decepticon.tools.ad.dcsync import dcsync_candidates
 from decepticon.tools.ad.kerberos import classify_hashcat_hash, parse_ticket
 from decepticon_core.types.kg import KnowledgeGraph
@@ -31,14 +31,14 @@ class TestBloodHoundIngest:
             ],
         }
         g = KnowledgeGraph()
-        stats = merge_bloodhound_json(bh, g)
+        stats = bh_mod.merge_bloodhound_json(bh, g)
         assert stats.users == 1
         assert stats.edges >= 1
 
     def test_empty_array_produces_zero_stats(self) -> None:
         """BH CE format: top-level array is valid (JSONL items)."""
         g = KnowledgeGraph()
-        stats = merge_bloodhound_json("[]", g)
+        stats = bh_mod.merge_bloodhound_json("[]", g)
         assert stats.users == 0
 
     def test_rejects_top_level_scalar(self) -> None:
@@ -46,27 +46,27 @@ class TestBloodHoundIngest:
 
         g = KnowledgeGraph()
         with pytest.raises(ValueError, match="top level"):
-            merge_bloodhound_json("42", g)
+            bh_mod.merge_bloodhound_json("42", g)
 
     def test_rejects_invalid_json(self) -> None:
         import pytest
 
         g = KnowledgeGraph()
         with pytest.raises(ValueError, match="invalid JSON"):
-            merge_bloodhound_json("{not json", g)
+            bh_mod.merge_bloodhound_json("{not json", g)
 
     def test_rejects_non_array_data_field(self) -> None:
         import pytest
 
         g = KnowledgeGraph()
         with pytest.raises(ValueError, match="'data'/'items' must be an array"):
-            merge_bloodhound_json({"meta": {"type": "users"}, "data": "oops"}, g)
+            bh_mod.merge_bloodhound_json({"meta": {"type": "users"}, "data": "oops"}, g)
 
     def test_missing_meta_is_tolerated(self) -> None:
         # Historical behavior: meta is optional. Verify it still works
         # and doesn't crash on the new shape-check path.
         g = KnowledgeGraph()
-        stats = merge_bloodhound_json(
+        stats = bh_mod.merge_bloodhound_json(
             {
                 "data": [
                     {
@@ -82,8 +82,6 @@ class TestBloodHoundIngest:
     def test_zip_bomb_oversized_entry_is_skipped(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        import decepticon.tools.ad.bloodhound as bh_mod
-
         monkeypatch.setattr(bh_mod, "_MAX_ENTRY_SIZE", 100)
 
         content = b'{"meta":{"type":"users"},"data":[]}' + b"x" * 200
@@ -92,7 +90,7 @@ class TestBloodHoundIngest:
             zf.writestr("users.json", content)
 
         g = KnowledgeGraph()
-        stats = ingest_bloodhound_zip(zip_path, g)
+        stats = bh_mod.ingest_bloodhound_zip(zip_path, g)
         assert stats.users == 0
 
     def test_domains_stat_accumulated_from_list(self) -> None:
@@ -108,7 +106,7 @@ class TestBloodHoundIngest:
             }
         ]
         g = KnowledgeGraph()
-        stats = merge_bloodhound_json(payload, g)
+        stats = bh_mod.merge_bloodhound_json(payload, g)
         assert stats.domains > 0
 
     def test_dcsync_detection(self) -> None:
@@ -129,7 +127,7 @@ class TestBloodHoundIngest:
             ],
         }
         g = KnowledgeGraph()
-        merge_bloodhound_json(bh, g)
+        bh_mod.merge_bloodhound_json(bh, g)
         assert len(dcsync_candidates(g)) == 1
 
 
