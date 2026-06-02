@@ -19,6 +19,8 @@ import {
   Loader2,
   FolderOpen,
   Activity,
+  Terminal,
+  Rocket,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -179,6 +181,28 @@ function EventRow({ event, relativeTime }: EventRowProps) {
         </span>
       );
       rowClass = "bg-amber-500/5";
+      break;
+    }
+    case "background_complete": {
+      const exit = event.exit_code;
+      const ok = exit === 0 || exit == null;
+      const label = event.command ?? event.session ?? "background task";
+      icon = <Terminal className={cn("h-3.5 w-3.5 shrink-0", ok ? "text-emerald-400" : "text-red-400")} />;
+      detail = (
+        <span className={ok ? "text-zinc-300" : "text-red-300"}>
+          {name} <span className="font-mono">{label}</span>
+          {exit != null ? ` exited ${exit}` : " finished"}
+        </span>
+      );
+      if (!ok) rowClass = "bg-red-500/5";
+      break;
+    }
+    case "engagement_ready": {
+      icon = <Rocket className="h-3.5 w-3.5 shrink-0 text-violet-400" />;
+      detail = (
+        <span className="text-violet-300">Engagement planning complete — Decepticon will continue</span>
+      );
+      rowClass = "bg-violet-500/5";
       break;
     }
     default: {
