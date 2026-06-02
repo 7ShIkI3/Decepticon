@@ -83,6 +83,12 @@ export function useAgentActivity({
           }
           break;
         }
+
+        case "ask_user_question": {
+          agentStates.set(event.agent, "waiting_for_user");
+          activeAgentIds.add(event.agent);
+          break;
+        }
       }
     }
 
