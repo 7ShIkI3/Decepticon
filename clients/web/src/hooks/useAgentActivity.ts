@@ -13,8 +13,8 @@ import type { SubagentCustomEvent } from "@decepticon/streaming";
 import type { GraphNode, GraphEdge, AgentRuntimeState } from "@/lib/graph/types";
 import { isWaitingState } from "@/lib/graph/types";
 
-const ORCHESTRATOR_RADIUS = 48;
-const AGENT_RADIUS = 32;
+const ORCHESTRATOR_RADIUS = 36;
+const AGENT_RADIUS = 24;
 const TOOL_SESSION_RADIUS = 10;
 
 interface ToolSession {
@@ -91,7 +91,8 @@ export function useAgentActivity({
 
     const nodes: GraphNode[] = [];
     const agentPositions = new Map<string, { x: number; y: number }>();
-    const angleStep = (2 * Math.PI) / Math.max(visibleAgents.length - 1, 1); // -1 for orchestrator at center
+    const ringCount = visibleAgents.filter((a) => a.id !== "decepticon").length;
+    const angleStep = (2 * Math.PI) / Math.max(ringCount, 1);
 
     let angleIdx = 0;
     for (const agent of visibleAgents) {
