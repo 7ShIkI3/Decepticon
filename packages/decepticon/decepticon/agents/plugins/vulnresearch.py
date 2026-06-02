@@ -62,7 +62,6 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
-from decepticon.tools.research.tools import kg_query, kg_stats
 from decepticon_core.plugin_loader import (
     is_bundle_enabled,
     load_plugin_callbacks,
@@ -72,11 +71,11 @@ from decepticon_core.plugin_loader import (
 _ROLE = "vulnresearch"
 _RECURSION_LIMIT = 1000
 
-# Name-keyed baseline tools (tiny surface — read the graph only).
-_STANDARD_TOOLS: dict[str, Any] = {
-    "kg_query": kg_query,
-    "kg_stats": kg_stats,
-}
+# kg_query / kg_stats were removed pending the Neo4j middleware redesign
+# (see docs/design/neo4j-research-notes.md). KG surface is currently
+# limited to the analyst agent. This orchestrator now relies purely on
+# subagent dispatch and has no direct tools.
+_STANDARD_TOOLS: dict[str, Any] = {}
 
 
 def create_vulnresearch_agent(

@@ -57,14 +57,19 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
-from decepticon.tools.research.tools import kg_query, kg_stats
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+# kg_query / kg_stats were removed pending the Neo4j middleware redesign
+# (see docs/design/neo4j-research-notes.md). KG surface is currently
+# limited to the analyst agent. SCANNER_TOOLS is kept (it is the scanner
+# plugin's purpose); note that kg_add_candidate inside SCANNER_TOOLS still
+# routes through the broken graph_transaction shim and is in scope for
+# the same refactor.
 _STANDARD_TOOLS: dict[str, Any] = {
-    # Tight tool surface: sharded scanner helpers + minimal KG read access +
-    # bash for directory sizing only. NO vuln analysis tools.
+    # Tight tool surface: sharded scanner helpers + bash for directory
+    # sizing only. NO vuln analysis tools.
     t.name: t
-    for t in [*SCANNER_TOOLS, kg_query, kg_stats, *BASH_TOOLS]
+    for t in [*SCANNER_TOOLS, *BASH_TOOLS]
 }
 
 

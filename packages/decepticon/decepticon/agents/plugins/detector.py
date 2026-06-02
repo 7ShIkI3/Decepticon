@@ -58,27 +58,14 @@ from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
-from decepticon.tools.research.tools import (
-    cve_by_package,
-    cve_lookup,
-    kg_add_edge,
-    kg_add_node,
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-)
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-# Name-keyed baseline tools.
-_STANDARD_TOOLS: dict[str, Any] = {
-    "kg_query": kg_query,
-    "kg_neighbors": kg_neighbors,
-    "kg_stats": kg_stats,
-    "kg_add_node": kg_add_node,
-    "kg_add_edge": kg_add_edge,
-    "cve_lookup": cve_lookup,
-    "cve_by_package": cve_by_package,
-}
+# KG tools and cve_* were removed pending the Neo4j middleware redesign
+# (see docs/design/neo4j-research-notes.md). KG surface is currently
+# limited to the analyst agent. cve_lookup / cve_by_package also live
+# in the broken tools/research module; reintroduce from a clean source
+# after the refactor lands.
+_STANDARD_TOOLS: dict[str, Any] = {}
 
 _SKILL_SOURCES: list[str] = [
     "/skills/plugins/detector/",

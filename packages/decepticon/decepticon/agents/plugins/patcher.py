@@ -56,22 +56,15 @@ from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
-from decepticon.tools.research.patch import patch_propose, patch_verify
-from decepticon.tools.research.tools import (
-    kg_neighbors,
-    kg_query,
-    kg_stats,
-)
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+# KG tools and patch_propose / patch_verify were removed pending the
+# Neo4j middleware redesign (see docs/design/neo4j-research-notes.md).
+# patch_propose / patch_verify route through the broken graph_transaction
+# shim; they will return after the refactor lands.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
-        patch_propose,
-        patch_verify,
-        kg_query,
-        kg_neighbors,
-        kg_stats,
         *BASH_TOOLS,
     ]
 }
