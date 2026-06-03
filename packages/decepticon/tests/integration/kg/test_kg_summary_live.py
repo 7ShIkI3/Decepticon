@@ -109,9 +109,7 @@ def _populate(store: KGStore, engagement: str) -> None:
     )
 
 
-def test_summary_empty_engagement_shows_header_only(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_summary_empty_engagement_shows_header_only(kgstore: KGStore, engagement: str) -> None:
     """A brand-new engagement gets the header + stats line, nothing else."""
     out = build_summary(kgstore, engagement=engagement)
     assert f"engagement={engagement}" in out
@@ -132,9 +130,7 @@ def test_summary_populated_engagement_contains_all_sections(
     assert "Crown jewels" in out
 
 
-def test_summary_vulns_ordered_by_severity(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_summary_vulns_ordered_by_severity(kgstore: KGStore, engagement: str) -> None:
     """Critical before high before low in the rendered block."""
     _populate(kgstore, engagement)
     out = build_summary(kgstore, engagement=engagement)
@@ -156,13 +152,13 @@ def test_summary_unexplored_entrypoint_listed_explored_omitted(
     ep_section_start = out.find("Unexplored entrypoints")
     if ep_section_start >= 0:
         next_section = out.find("\n\n", ep_section_start + 1)
-        ep_section = out[ep_section_start:next_section] if next_section > 0 else out[ep_section_start:]
+        ep_section = (
+            out[ep_section_start:next_section] if next_section > 0 else out[ep_section_start:]
+        )
         assert "https://app/login" not in ep_section
 
 
-def test_summary_crown_jewel_path_count_correct(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_summary_crown_jewel_path_count_correct(kgstore: KGStore, engagement: str) -> None:
     _populate(kgstore, engagement)
     out = build_summary(kgstore, engagement=engagement)
     # The crown jewel was linked to the unexplored entrypoint via one
@@ -170,9 +166,7 @@ def test_summary_crown_jewel_path_count_correct(
     assert "admin_panel (1 viable path)" in out
 
 
-def test_summary_advances_with_revision(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_summary_advances_with_revision(kgstore: KGStore, engagement: str) -> None:
     """The summary's revision token changes after a write."""
     before = build_summary(kgstore, engagement=engagement)
     _populate(kgstore, engagement)
@@ -183,9 +177,7 @@ def test_summary_advances_with_revision(
     assert before_rev != after_rev
 
 
-def test_summary_respects_vuln_cap(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_summary_respects_vuln_cap(kgstore: KGStore, engagement: str) -> None:
     """When more than MAX_VULNS vulns exist, the block truncates."""
     observations: list[dict[str, Any]] = []
     for i in range(MAX_VULNS * 2):
@@ -209,9 +201,7 @@ def test_summary_respects_vuln_cap(
     assert bullet_count == MAX_VULNS
 
 
-def test_summary_respects_entrypoint_cap(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_summary_respects_entrypoint_cap(kgstore: KGStore, engagement: str) -> None:
     observations: list[dict[str, Any]] = []
     for i in range(MAX_ENTRYPOINTS * 2):
         observations.append(
