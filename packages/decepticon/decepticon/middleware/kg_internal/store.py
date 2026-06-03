@@ -419,13 +419,15 @@ class KGStore:
                 node_query = (
                     f"UNWIND $rows AS row "
                     f"MERGE (n:{label} {{key: row.key, engagement: $engagement}}) "
-                    "ON CREATE SET n.firstseen = $now "
+                    "ON CREATE SET n.firstseen = $now, n._jc = true "
+                    "ON MATCH SET n._jc = false "
                     "SET n.label = row.label, "
                     "    n.lastupdated = $now, "
                     "    n.created_by = $created_by, "
                     "    n.source_episode_id = $source_episode_id, "
                     "    n += row.props "
-                    "WITH n, n.firstseen = $now AS just_created "
+                    "WITH n, n._jc AS just_created "
+                    "REMOVE n._jc "
                     "RETURN sum(CASE WHEN just_created THEN 1 ELSE 0 END) AS created, "
                     "       sum(CASE WHEN just_created THEN 0 ELSE 1 END) AS merged"
                 )
