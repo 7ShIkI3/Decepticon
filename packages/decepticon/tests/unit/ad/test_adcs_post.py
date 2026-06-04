@@ -32,6 +32,7 @@ class _FakeKGStore:
         esc6b_created: int = 1,
         esc9a_created: int = 1,
         esc9b_created: int = 1,
+        esc13_created: int = 1,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any], str]] = []
         self._dcsync_created = dcsync_created
@@ -42,6 +43,7 @@ class _FakeKGStore:
         self._esc6b_created = esc6b_created
         self._esc9a_created = esc9a_created
         self._esc9b_created = esc9b_created
+        self._esc13_created = esc13_created
         self.closed = False
 
     def execute_write(
@@ -53,6 +55,8 @@ class _FakeKGStore:
         # before falling back to the broader GoldenCert one so the
         # ``OWNS_LIMITED_RIGHTS`` substring used in ESC4 doesn't trip
         # the wrong return value.
+        if "ADCS_ESC13" in query:
+            return [{"created": self._esc13_created}]
         if "ADCS_ESC6A" in query:
             return [{"created": self._esc6a_created}]
         if "ADCS_ESC6B" in query:
@@ -97,6 +101,7 @@ class TestPublicSignatures:
             esc6b_created=9,
             esc9a_created=6,
             esc9b_created=7,
+            esc13_created=10,
         )
         stats = synthesise_adcs_post(
             engagement="t",
@@ -110,6 +115,7 @@ class TestPublicSignatures:
         assert stats.adcs_esc6b == 9
         assert stats.adcs_esc9a == 6
         assert stats.adcs_esc9b == 7
+        assert stats.adcs_esc13 == 10
 
     def test_provenance_threaded_into_every_call(self) -> None:
         store = _FakeKGStore()
@@ -119,7 +125,7 @@ class TestPublicSignatures:
             source_episode_id="ep-x",
             created_by="adcs_post_test",
         )
-        assert len(store.calls) == 8
+        assert len(store.calls) == 9
         for _query, params, engagement in store.calls:
             assert engagement == "t-eng"
             assert params["engagement"] == "t-eng"
@@ -404,6 +410,62 @@ class TestAdcsEsc6Queries:
         esc6a, esc6b = self._esc6_queries(store)
         assert "bh_right = 'Enroll'" in esc6a
         assert "bh_right = 'Enroll'" in esc6b
+
+
+# ── ADCS ESC13 algorithm ───────────────────────────────────────────
+
+
+class TestAdcsEsc13Query:
+    def _esc13_query(self, store: _FakeKGStore) -> str:
+        for q, _params, _engagement in store.calls:
+            if "ADCS_ESC13" in q:
+                return q
+        raise AssertionError("ESC13 query not issued")
+
+    def test_template_must_have_issuancepolicies(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._esc13_query(store)
+        # The OID-list field must be present (a null check) and the
+        # IssuancePolicy's OID must be contained in it.
+        assert "ct.issuancepolicies IS NOT NULL" in q
+        assert "pol.certtemplateoid IN ct.issuancepolicies" in q
+
+    def test_requires_oid_group_link_to_target_group(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._esc13_query(store)
+        # The IssuancePolicy must publish an ``OID_GROUP_LINK`` edge
+        # to the group whose membership is implicit on enrol.
+        assert ":OID_GROUP_LINK" in q
+        assert ":ADIssuancePolicy" in q
+
+    def test_requires_enroll_via_bh_right(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._esc13_query(store)
+        assert "bh_right = 'Enroll'" in q
+
+    def test_via_template_and_via_policy_provenance(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._esc13_query(store)
+        # ESC13 carries both the vulnerable template and the abused
+        # policy on the edge so analysts can trace either side.
+        assert "via_template" in q
+        assert "via_policy" in q
 
 
 # ── ADCS ESC9a / ESC9b algorithms ──────────────────────────────────

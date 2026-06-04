@@ -49,6 +49,7 @@ class PostProcessStats:
     adcs_esc6b: int = 0
     adcs_esc9a: int = 0
     adcs_esc9b: int = 0
+    adcs_esc13: int = 0
 
     def to_dict(self) -> dict[str, int]:
         return self.__dict__
@@ -283,6 +284,54 @@ _ADCS_ESC9A_QUERY = (
     "RETURN sum(CASE WHEN just_created THEN 1 ELSE 0 END) AS created"
 )
 
+# ADCS ESC13 — OID-group-link abuse.
+#
+# When a CertTemplate's ``issuancepolicies`` field references the OID
+# of an ``IssuancePolicy`` whose ``GroupLink`` points to a group,
+# enrolling for that template implicitly grants membership in the
+# target group for the duration of the issued cert. A principal who
+# can enrol thus gains group membership without ever being added to
+# the group itself.
+#
+# Edge: principal --ADCS_ESC13--> target group.
+#
+# Pre-requisites in the raw graph:
+#   - CertTemplate is authentication-enabled, no manager approval.
+#   - ``ct.issuancepolicies`` (list of OID strings) contains the
+#     ``IssuancePolicy.certtemplateoid`` of some IssuancePolicy node.
+#   - That IssuancePolicy has an ``OID_GROUP_LINK`` edge to the
+#     target group.
+#   - EnterpriseCA publishes the template.
+#   - Principal has Enroll right on the template.
+
+_ADCS_ESC13_QUERY = (
+    "MATCH (ct:ADCertTemplate {engagement: $engagement}) "
+    "WHERE ct.authenticationenabled = true "
+    "  AND coalesce(ct.requiresmanagerapproval, false) = false "
+    "  AND ct.issuancepolicies IS NOT NULL "
+    "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(ct) "
+    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "WHERE en.bh_right = 'Enroll' "
+    "MATCH (pol:ADIssuancePolicy {engagement: $engagement}) "
+    "WHERE pol.certtemplateoid IN ct.issuancepolicies "
+    "MATCH (pol)-[:OID_GROUP_LINK {engagement: $engagement}]->(g) "
+    "WITH DISTINCT p, g, ct, pol "
+    "MERGE (p)-[r:ADCS_ESC13 {engagement: $engagement}]->(g) "
+    "ON CREATE SET r.firstseen = $now, "
+    "              r.created_by = $created_by, "
+    "              r.source_episode_id = $source_episode_id, "
+    "              r.post_process_source = 'ESC13: IssuancePolicy.GroupLink + Enroll on PublishedTo template', "
+    "              r.via_template = ct.key, "
+    "              r.via_policy = pol.key, "
+    "              r._jc = true "
+    "ON MATCH SET r._jc = false "
+    "SET r.lastupdated = $now "
+    "WITH r, r._jc AS just_created "
+    "REMOVE r._jc "
+    "RETURN sum(CASE WHEN just_created THEN 1 ELSE 0 END) AS created"
+)
+
+
 _ADCS_ESC9B_QUERY = (
     "MATCH (ct:ADCertTemplate {engagement: $engagement}) "
     "WHERE ct.authenticationenabled = true "
@@ -452,6 +501,20 @@ def synthesise_adcs_post(
         )
         if rows:
             stats.adcs_esc9b = int(rows[0].get("created") or 0)
+
+        # ADCS ESC13
+        rows = target_store.execute_write(
+            _ADCS_ESC13_QUERY,
+            {
+                "engagement": engagement,
+                "now": now,
+                "created_by": created_by,
+                "source_episode_id": source_episode_id,
+            },
+            engagement=engagement,
+        )
+        if rows:
+            stats.adcs_esc13 = int(rows[0].get("created") or 0)
     finally:
         if owned_store:
             target_store.close()
