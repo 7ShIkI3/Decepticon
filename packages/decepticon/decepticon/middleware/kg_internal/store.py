@@ -366,10 +366,15 @@ class KGStore:
                 rel_kind = edge.get("kind")
                 if not isinstance(to_key, str) or not to_key:
                     continue
-                try:
-                    rel_type = _safe_rel_type(rel_kind or "")
-                except ValueError:
-                    continue
+                # Fail-fast: silently dropping edges here hides data
+                # loss (the IngestState stats counter already counted
+                # this edge before observation handoff). ``_safe_rel_type``
+                # raises ``ValueError`` for any rel kind that doesn't
+                # match the closed UPPER_SNAKE_CASE vocabulary; surfacing
+                # it abort the whole batch and tells the caller exactly
+                # which kind needs to be added to ``EdgeKind`` or
+                # remapped at the ingest layer.
+                rel_type = _safe_rel_type(rel_kind or "")
                 try:
                     weight = float(edge.get("weight", 1.0))
                 except (TypeError, ValueError):
@@ -447,8 +452,16 @@ class KGStore:
                     "MATCH (s {key: row.src_key, engagement: $engagement}) "
                     "MATCH (d {key: row.dst_key, engagement: $engagement}) "
                     f"MERGE (s)-[r:{rel_type}]->(d) "
-                    "ON CREATE SET r.firstseen = $now "
+                    # ``r.engagement`` is mandatory: engagement-scoped
+                    # reads filter every edge via ``WHERE r.engagement
+                    # = $engagement``. Without it the edge survives the
+                    # write but is invisible to every read path
+                    # (``snapshot`` / ``revision`` / ``query``). The
+                    # mistake was silent because V001 / V002 only
+                    # constrain node uniqueness, not edge properties.
+                    "ON CREATE SET r.firstseen = $now, r.engagement = $engagement "
                     "SET r.lastupdated = $now, "
+                    "    r.engagement = $engagement, "
                     "    r.created_by = $created_by, "
                     "    r.source_episode_id = $source_episode_id, "
                     "    r.weight = row.weight, "
