@@ -1317,6 +1317,11 @@ class TestResolveCredentialsForLlamacpp:
 class TestLLMTimeout:
     """Whole-coroutine LLM request timeout (DECEPTICON_LLM_TIMEOUT_SECONDS)."""
 
+    @pytest.fixture(autouse=True)
+    def _isolate_timeout_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DECEPTICON_LLM_TIMEOUT_SECONDS", raising=False)
+        monkeypatch.delenv("DECEPTICON_LLM__TIMEOUT", raising=False)
+
     def test_call_with_timeout_raises_typed_exception(self) -> None:
         from decepticon.llm.factory import LLMTimeoutError, call_with_timeout
 
@@ -1399,4 +1404,35 @@ class TestLLMTimeout:
 
         monkeypatch.setenv("DECEPTICON_LLM_TIMEOUT_SECONDS", "-5")
         with pytest.raises(ValueError, match="greater than 0"):
+            _resolve_llm_timeout_seconds()
+
+    def test_pydantic_nested_alias_takes_effect(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from decepticon.llm.factory import _resolve_llm_timeout_seconds
+
+        monkeypatch.setenv("DECEPTICON_LLM__TIMEOUT", "900")
+        assert _resolve_llm_timeout_seconds() == 900.0
+
+    def test_explicit_env_wins_over_pydantic_alias(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from decepticon.llm.factory import _resolve_llm_timeout_seconds
+
+        monkeypatch.setenv("DECEPTICON_LLM_TIMEOUT_SECONDS", "120")
+        monkeypatch.setenv("DECEPTICON_LLM__TIMEOUT", "900")
+        assert _resolve_llm_timeout_seconds() == 120.0
+
+    def test_alias_invalid_value_attributes_error_to_alias(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from decepticon.llm.factory import _resolve_llm_timeout_seconds
+
+        monkeypatch.setenv("DECEPTICON_LLM__TIMEOUT", "nonsense")
+        with pytest.raises(ValueError, match="DECEPTICON_LLM__TIMEOUT"):
+            _resolve_llm_timeout_seconds()
+
+    def test_alias_non_positive_attributes_error_to_alias(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from decepticon.llm.factory import _resolve_llm_timeout_seconds
+
+        monkeypatch.setenv("DECEPTICON_LLM__TIMEOUT", "0")
+        with pytest.raises(ValueError, match="DECEPTICON_LLM__TIMEOUT.*greater than 0"):
             _resolve_llm_timeout_seconds()

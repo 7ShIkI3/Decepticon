@@ -54,6 +54,15 @@ log = get_logger("llm.factory")
 
 DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 600
 LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
+# `.env.example` documents the pydantic-settings nested form
+# (``DECEPTICON_LLM__TIMEOUT``) because that's what the rest of the
+# settings tree uses (``LLMConfig.timeout`` → httpx transport). The
+# whole-coroutine guard below is a separate piece of plumbing — but
+# from the user's point of view there is only one "LLM timeout" knob,
+# so we honor the documented name too. Precedence:
+# ``DECEPTICON_LLM_TIMEOUT_SECONDS`` (explicit, whole-coroutine) >
+# ``DECEPTICON_LLM__TIMEOUT`` (the published env knob) > default.
+LLM_TIMEOUT_ENV_ALIAS = "DECEPTICON_LLM__TIMEOUT"
 
 
 class LLMTimeoutError(RuntimeError):
@@ -69,17 +78,34 @@ class LLMTimeoutError(RuntimeError):
 def _resolve_llm_timeout_seconds() -> float:
     """Resolve the per-call LLM request timeout.
 
-    Precedence: ``DECEPTICON_LLM_TIMEOUT_SECONDS`` env > default ``600``.
-    Rejects non-positive or non-numeric env values with ``ValueError`` so
-    misconfiguration fails loudly rather than silently disabling the guard.
+    Precedence: ``DECEPTICON_LLM_TIMEOUT_SECONDS`` env >
+    ``DECEPTICON_LLM__TIMEOUT`` env (the pydantic-settings nested form
+    advertised in ``.env.example``) > default ``600``. The alias is what
+    users actually set when following the published docs — without it,
+    changing the documented knob silently has no effect on the whole-
+    coroutine guard and long generations still trip the 600 s default
+    (see issue #540).
+
+    Rejects non-positive or non-numeric env values with ``ValueError``
+    so misconfiguration fails loudly rather than silently disabling the
+    guard.
     """
     raw = os.getenv(LLM_TIMEOUT_ENV, "").strip()
+    source = LLM_TIMEOUT_ENV
+    if not raw:
+        raw = os.getenv(LLM_TIMEOUT_ENV_ALIAS, "").strip()
+        source = LLM_TIMEOUT_ENV_ALIAS
     if raw:
-        value = float(raw)
+        try:
+            value = float(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{source} must be a number (got {raw!r})"
+            ) from exc
     else:
         value = float(DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS)
     if value <= 0:
-        raise ValueError(f"{LLM_TIMEOUT_ENV} must be greater than 0")
+        raise ValueError(f"{source} must be greater than 0")
     return value
 
 
