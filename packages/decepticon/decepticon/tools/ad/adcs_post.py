@@ -51,6 +51,7 @@ class PostProcessStats:
     adcs_esc9a: int = 0
     adcs_esc9b: int = 0
     adcs_esc13: int = 0
+    trusted_for_ntauth: int = 0
 
     def to_dict(self) -> dict[str, int]:
         return self.__dict__
@@ -414,6 +415,41 @@ _ADCS_ESC9B_QUERY = (
 )
 
 
+# ``TRUSTED_FOR_NTAUTH`` — pair every EnterpriseCA whose certificate
+# thumbprint is listed in an NTAuthStore's ``certthumbprints`` with
+# the matching store. BHCE uses this edge as the trust-anchor leg
+# of every ESC* path; we synthesise it lazily here so future ESC
+# refinements can stack a ``MATCH (eca)-[:TRUSTED_FOR_NTAUTH]->(:ADNTAuthStore)``
+# precondition on top of the existing predicate without changing
+# the ingest layer.
+#
+# BHCE simplification: the upstream algorithm also handles
+# ``ADRootCA``/``ADAIACA`` chain validation via
+# ``ROOT_CA_FOR`` / ``ISSUED_SIGNED_BY``. We only model the leaf
+# ``ADEnterpriseCA`` cert here; intermediate-CA chain validation
+# is the natural follow-up.
+
+_TRUSTED_FOR_NTAUTH_QUERY = (
+    "MATCH (eca:ADEnterpriseCA {engagement: $engagement}) "
+    "WHERE eca.certthumbprint IS NOT NULL "
+    "MATCH (nta:ADNTAuthStore {engagement: $engagement}) "
+    "WHERE nta.certthumbprints IS NOT NULL "
+    "  AND eca.certthumbprint IN nta.certthumbprints "
+    "MERGE (eca)-[r:TRUSTED_FOR_NTAUTH {engagement: $engagement}]->(nta) "
+    "ON CREATE SET r.firstseen = $now, "
+    "              r.created_by = $created_by, "
+    "              r.source_episode_id = $source_episode_id, "
+    "              r.post_process_source = 'TrustedForNTAuth: thumbprint match', "
+    "              r.via_thumbprint = eca.certthumbprint, "
+    "              r._jc = true "
+    "ON MATCH SET r._jc = false "
+    "SET r.lastupdated = $now "
+    "WITH r, r._jc AS just_created "
+    "REMOVE r._jc "
+    "RETURN sum(CASE WHEN just_created THEN 1 ELSE 0 END) AS created"
+)
+
+
 def synthesise_adcs_post(
     *,
     engagement: str,
@@ -586,6 +622,22 @@ def synthesise_adcs_post(
         )
         if rows:
             stats.adcs_esc13 = int(rows[0].get("created") or 0)
+
+        # TrustedForNTAuth — runs last so analysts inspecting the
+        # post-process trace see ESC* edges then the trust-anchor
+        # pairing, matching the BHCE server's processing order.
+        rows = target_store.execute_write(
+            _TRUSTED_FOR_NTAUTH_QUERY,
+            {
+                "engagement": engagement,
+                "now": now,
+                "created_by": created_by,
+                "source_episode_id": source_episode_id,
+            },
+            engagement=engagement,
+        )
+        if rows:
+            stats.trusted_for_ntauth = int(rows[0].get("created") or 0)
     finally:
         if owned_store:
             target_store.close()

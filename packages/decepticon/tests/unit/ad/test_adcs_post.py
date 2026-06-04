@@ -34,6 +34,7 @@ class _FakeKGStore:
         esc9a_created: int = 1,
         esc9b_created: int = 1,
         esc13_created: int = 1,
+        trusted_for_ntauth_created: int = 1,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any], str]] = []
         self._dcsync_created = dcsync_created
@@ -46,6 +47,7 @@ class _FakeKGStore:
         self._esc9a_created = esc9a_created
         self._esc9b_created = esc9b_created
         self._esc13_created = esc13_created
+        self._trusted_for_ntauth_created = trusted_for_ntauth_created
         self.closed = False
 
     def execute_write(
@@ -57,6 +59,8 @@ class _FakeKGStore:
         # before falling back to the broader GoldenCert one so the
         # ``OWNS_LIMITED_RIGHTS`` substring used in ESC4 doesn't trip
         # the wrong return value.
+        if "TRUSTED_FOR_NTAUTH" in query:
+            return [{"created": self._trusted_for_ntauth_created}]
         if "ADCS_ESC13" in query:
             return [{"created": self._esc13_created}]
         if "ADCS_ESC6A" in query:
@@ -107,6 +111,7 @@ class TestPublicSignatures:
             esc9a_created=6,
             esc9b_created=7,
             esc13_created=10,
+            trusted_for_ntauth_created=12,
         )
         stats = synthesise_adcs_post(
             engagement="t",
@@ -122,6 +127,7 @@ class TestPublicSignatures:
         assert stats.adcs_esc9a == 6
         assert stats.adcs_esc9b == 7
         assert stats.adcs_esc13 == 10
+        assert stats.trusted_for_ntauth == 12
 
     def test_provenance_threaded_into_every_call(self) -> None:
         store = _FakeKGStore()
@@ -131,7 +137,7 @@ class TestPublicSignatures:
             source_episode_id="ep-x",
             created_by="adcs_post_test",
         )
-        assert len(store.calls) == 10
+        assert len(store.calls) == 11
         for _query, params, engagement in store.calls:
             assert engagement == "t-eng"
             assert params["engagement"] == "t-eng"
@@ -486,6 +492,63 @@ class TestAdcsEsc6Queries:
         esc6a, esc6b = self._esc6_queries(store)
         assert "bh_right = 'Enroll'" in esc6a
         assert "bh_right = 'Enroll'" in esc6b
+
+
+# ── TrustedForNTAuth algorithm ─────────────────────────────────────
+
+
+class TestTrustedForNTAuthQuery:
+    def _query(self, store: _FakeKGStore) -> str:
+        for q, _params, _engagement in store.calls:
+            if "TRUSTED_FOR_NTAUTH" in q:
+                return q
+        raise AssertionError("TRUSTED_FOR_NTAUTH query not issued")
+
+    def test_matches_enterprise_ca_and_nt_auth_store(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._query(store)
+        assert ":ADEnterpriseCA" in q
+        assert ":ADNTAuthStore" in q
+
+    def test_thumbprint_membership_check(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._query(store)
+        # The CA's single thumbprint must be IN the store's list.
+        assert "eca.certthumbprint IN nta.certthumbprints" in q
+        # Both sides null-checked so a partial-ingest doesn't pair
+        # unrelated nodes via NULL = NULL.
+        assert "eca.certthumbprint IS NOT NULL" in q
+        assert "nta.certthumbprints IS NOT NULL" in q
+
+    def test_thumbprint_carried_as_provenance(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._query(store)
+        # The matching thumbprint lands on the edge so analysts can
+        # confirm which key actually closed the trust path.
+        assert "via_thumbprint" in q
+        assert "eca.certthumbprint" in q
+
+    def test_query_uses_jc_marker_for_idempotent_count(self) -> None:
+        store = _FakeKGStore()
+        synthesise_adcs_post(
+            engagement="t",
+            store=store,  # type: ignore[arg-type]
+        )
+        q = self._query(store)
+        assert "_jc" in q
+        assert "ON CREATE SET" in q and "ON MATCH SET" in q
 
 
 # ── ADCS ESC13 algorithm ───────────────────────────────────────────
