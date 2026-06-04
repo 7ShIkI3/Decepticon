@@ -1,33 +1,71 @@
-# Engagement-asset taxonomy seeded into the skill graph.
+# Engagement-asset taxonomy seeded into the Skillogy graph.
 # Each entry becomes one :AssetType node; the `category` field is
 # emitted as a property and used after build to wire HAS_SUBTYPE edges
 # from category-name -> child-name.
 asset_types:
   # Root
-  - {name: service,           category: root}
+  - {name: asset,             category: root}
 
-  # Web
+  # Broad categories
+  - {name: service,           category: asset}
+  - {name: network-identifier, category: asset}
+  - {name: network-infrastructure, category: asset}
+  - {name: application,       category: asset}
+  - {name: software-artifact, category: asset}
+  - {name: hardware-physical, category: asset}
+  - {name: blockchain-asset,  category: asset}
+  - {name: communication-integration, category: asset}
+  - {name: other-asset,       category: asset}
+
+  # Network identifiers / scope selectors
+  - {name: cidr,              category: network-identifier}
+  - {name: ip-address,        category: network-identifier}
+  - {name: domain,            category: network-identifier}
+  - {name: subdomain,         category: network-identifier}
+  - {name: wildcard,          category: network-identifier}
+  - {name: url,               category: network-identifier}
+  - {name: asn,               category: network-identifier}
+
+  # Web / API services
   - {name: web-service,       category: service}
   - {name: http,              category: web-service}
   - {name: https,             category: web-service}
   - {name: websocket,         category: web-service}
-  - {name: api-rest,          category: web-service}
-  - {name: api-graphql,       category: web-service}
+  - {name: api,               category: web-service}
+  - {name: api-rest,          category: api}
+  - {name: api-graphql,       category: api}
+  - {name: grpc-service,      category: api}
+  - {name: oauth-sso-provider, category: api}
 
-  # Database
+  # Network infrastructure
+  - {name: cdn-edge-infrastructure, category: network-infrastructure}
+  - {name: dns-infrastructure, category: network-infrastructure}
+  - {name: network-device,    category: network-infrastructure}
+
+  # Database / data platforms
   - {name: database,          category: service}
+  - {name: exposed-database,  category: database}
   - {name: mysql,             category: database}
   - {name: mssql,             category: database}
   - {name: postgres,          category: database}
   - {name: mongodb,           category: database}
   - {name: redis,             category: database}
   - {name: oracle-db,         category: database}
+  - {name: data-storage,      category: service}
+  - {name: data-warehouse,    category: data-storage}
+  - {name: secrets-manager,   category: data-storage}
+  - {name: backup-snapshot-storage, category: data-storage}
 
-  # Directory / Identity
+  # Directory / identity / auth
   - {name: directory-service, category: service}
   - {name: active-directory,  category: directory-service}
   - {name: ldap,              category: directory-service}
   - {name: kerberos,          category: directory-service}
+  - {name: identity-auth,     category: service}
+  - {name: saml-oidc-idp,     category: identity-auth}
+  - {name: sso-ldap-ad-integration, category: identity-auth}
+  - {name: fido2-implementation, category: identity-auth}
+  - {name: ca-pki-infrastructure, category: identity-auth}
 
   # Remote access
   - {name: remote-access,     category: service}
@@ -45,16 +83,50 @@ asset_types:
   # Cloud
   - {name: cloud-resource,    category: service}
   - {name: aws-resource,      category: cloud-resource}
+  - {name: aws-account,       category: aws-resource}
   - {name: aws-s3,            category: aws-resource}
   - {name: aws-ec2,           category: aws-resource}
   - {name: aws-iam,           category: aws-resource}
   - {name: azure-resource,    category: cloud-resource}
+  - {name: azure-account,     category: azure-resource}
+  - {name: azure-blob,        category: azure-resource}
   - {name: gcp-resource,      category: cloud-resource}
+  - {name: gcp-project,       category: gcp-resource}
+  - {name: google-workspace,  category: cloud-resource}
+  - {name: m365-tenant,       category: cloud-resource}
+  - {name: ci-cd-pipeline,    category: cloud-resource}
+  - {name: serverless-function, category: cloud-resource}
 
   # Container / orchestration
   - {name: container,         category: service}
   - {name: kubernetes,        category: container}
   - {name: docker,            category: container}
+  - {name: docker-registry,   category: container}
+  - {name: container-image,   category: container}
+  - {name: vm-container-image, category: container}
+
+  # Applications / mobile / desktop
+  - {name: mobile-application, category: application}
+  - {name: ios-application,   category: mobile-application}
+  - {name: ios-app-store,     category: ios-application}
+  - {name: ios-testflight,    category: ios-application}
+  - {name: ios-ipa,           category: ios-application}
+  - {name: android-application, category: mobile-application}
+  - {name: android-play-store, category: android-application}
+  - {name: android-apk,       category: android-application}
+  - {name: desktop-application, category: application}
+  - {name: windows-microsoft-store, category: desktop-application}
+  - {name: macos-application, category: desktop-application}
+  - {name: linux-binary-package, category: desktop-application}
+  - {name: electron-desktop-app, category: desktop-application}
+  - {name: browser-extension, category: application}
+
+  # Desktop / compiled / source artifacts
+  - {name: source-code,       category: software-artifact}
+  - {name: executable,        category: software-artifact}
+  - {name: firmware,          category: software-artifact}
+  - {name: sdk-client-library, category: software-artifact}
+  - {name: cryptographic-library, category: software-artifact}
 
   # ICS / OT
   - {name: ics-ot,            category: service}
@@ -64,13 +136,38 @@ asset_types:
   - {name: dnp3,              category: ics-ot}
   - {name: opcua,             category: ics-ot}
 
-  # Email
+  # Hardware / physical / RF
+  - {name: hardware-iot,      category: hardware-physical}
+  - {name: physical-facility-access-control, category: hardware-physical}
+  - {name: satellite-radio-rf-interface, category: hardware-physical}
+
+  # Email / communications / integrations
   - {name: email-server,      category: service}
   - {name: smtp,              category: email-server}
   - {name: imap,              category: email-server}
+  - {name: email-infrastructure, category: email-server}
+  - {name: chat-messaging-integration, category: communication-integration}
+  - {name: webhook-endpoint,  category: communication-integration}
+  - {name: third-party-integration, category: communication-integration}
 
-  # AI / LLM
+  # AI / LLM / ML
   - {name: ai-service,        category: service}
   - {name: llm-endpoint,      category: ai-service}
   - {name: rag-vector-store,  category: ai-service}
   - {name: model-registry,    category: ai-service}
+  - {name: ai-model,          category: ai-service}
+  - {name: llm-safety-classifier, category: ai-service}
+  - {name: ml-model-artifact, category: ai-service}
+  - {name: ai-inference-endpoint, category: ai-service}
+  - {name: training-data-pipeline, category: ai-service}
+
+  # Web3 / blockchain
+  - {name: blockchain,        category: blockchain-asset}
+  - {name: dlt,               category: blockchain-asset}
+  - {name: smart-contract,    category: blockchain-asset}
+  - {name: blockchain-node,   category: blockchain-asset}
+  - {name: defi-protocol,     category: blockchain-asset}
+  - {name: token-contract,    category: smart-contract}
+  - {name: cross-chain-bridge, category: blockchain-asset}
+  - {name: oracle-integration, category: blockchain-asset}
+  - {name: crypto-wallet,     category: blockchain-asset}
