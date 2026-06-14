@@ -16,6 +16,22 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **CI hardening pass.** `ci-ok` aggregator job — branch protection now
+  needs exactly one required check; every job added to `ci.yml` in the
+  future is automatically merge-blocking (skipped path-gated lanes
+  still pass, failures/cancellations block). All third-party actions
+  across the 8 workflows + the composite action pinned to full commit
+  SHAs with version comments (supply-chain; Scorecard pinned-deps).
+  `pip-audit` is now blocking (was `|| true` with a placeholder ignore)
+  with a documented `.pip-audit-ignore` escape hatch — and the gate's
+  first catch is in this PR: locked `pyjwt 2.12.1` carried 4 PYSECs,
+  bumped to 2.13.0. `dependency-review` enforces (high+ severity new
+  deps block). Dead license-gated Gitleaks job removed (TruffleHog in
+  security.yml + gitleaks pre-commit hook already cover it). Every job
+  carries `timeout-minutes`. PR coverage lane adds diff-cover patch
+  coverage to the step summary (still non-blocking by design).
+  `merge_group` trigger added so a future merge queue re-runs the same
+  gates on the queued commit. (#673)
 - **Universal LiteLLM provider support.** `litellm_dynamic_config.py`
   now carries the full LiteLLM v1.89.0 provider catalog (114 providers,
   source-verified env vars): ~75 new single-key providers in
@@ -28,7 +44,7 @@ LangGraph, sandbox) keeps the always-on contract.
   `ALLOWED_DYNAMIC_PROVIDERS` derives from the union, so any
   `DECEPTICON_LITELLM_MODELS=<provider>/<model>` slug from the catalog
   routes with the correct credentials; unknown prefixes get a
-  remediation message naming the supported-provider count.
+  remediation message naming the supported-provider count. (#672)
 
 - **ADR-0006 agent-driven container lifecycle.** A host-binary
   `opscontrol` daemon, supervised by systemd (Linux) / launchd (macOS),
